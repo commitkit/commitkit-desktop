@@ -6,10 +6,14 @@
 
 import { GitPlugin } from '../../src/integrations/git';
 import path from 'path';
+import os from 'os';
+
+// Expand ~ to home directory
+const expandTilde = (p: string) => p.startsWith('~') ? p.replace('~', os.homedir()) : p;
 
 // Use TEST_REPO env var if provided, otherwise default to commitkit-desktop repo
 const TEST_REPO_PATH = process.env.TEST_REPO
-  ? path.resolve(process.env.TEST_REPO)
+  ? path.resolve(expandTilde(process.env.TEST_REPO))
   : path.resolve(__dirname, '../../');
 
 describe('GitPlugin', () => {
