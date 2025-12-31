@@ -8,6 +8,8 @@ import { GitPlugin } from '../../src/integrations/git';
 import path from 'path';
 import os from 'os';
 
+import { execSync } from 'child_process';
+
 // Expand ~ to home directory
 const expandTilde = (p: string) => p.startsWith('~') ? p.replace('~', os.homedir()) : p;
 
@@ -16,11 +18,34 @@ const TEST_REPO_PATH = process.env.TEST_REPO
   ? path.resolve(expandTilde(process.env.TEST_REPO))
   : path.resolve(__dirname, '../../');
 
+// Auto-detect main branch: check for 'main', then 'master'
+function detectMainBranch(repoPath: string): string {
+  if (process.env.TEST_BRANCH) {
+    return process.env.TEST_BRANCH;
+  }
+  try {
+    // Check if 'main' branch exists
+    execSync(`git rev-parse --verify main`, { cwd: repoPath, stdio: 'ignore' });
+    return 'main';
+  } catch {
+    try {
+      // Check if 'master' branch exists
+      execSync(`git rev-parse --verify master`, { cwd: repoPath, stdio: 'ignore' });
+      return 'master';
+    } catch {
+      // Default to 'main' if neither exists
+      return 'main';
+    }
+  }
+}
+
+const TEST_BRANCH = detectMainBranch(TEST_REPO_PATH);
+
 describe('GitPlugin', () => {
   let plugin: GitPlugin;
 
   beforeEach(() => {
-    plugin = new GitPlugin(TEST_REPO_PATH);
+    plugin = new GitPlugin(TEST_REPO_PATH, TEST_BRANCH);
   });
 
   describe('metadata', () => {
