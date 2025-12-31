@@ -39,7 +39,6 @@ describe('GitPlugin', () => {
         author: 'Test',
         email: 'test@test.com',
         timestamp: new Date(),
-        branch: 'main',
       };
 
       expect(plugin.isRelevant(mockCommit, {})).toBe(true);

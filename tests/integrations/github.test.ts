@@ -36,7 +36,6 @@ describe('GitHubPlugin', () => {
         author: 'Test',
         email: 'test@test.com',
         timestamp: new Date(),
-        branch: 'main',
         remoteUrl: 'https://github.com/owner/repo.git',
       };
 
@@ -50,7 +49,6 @@ describe('GitHubPlugin', () => {
         author: 'Test',
         email: 'test@test.com',
         timestamp: new Date(),
-        branch: 'main',
         remoteUrl: 'git@github.com:owner/repo.git',
       };
 
@@ -64,7 +62,6 @@ describe('GitHubPlugin', () => {
         author: 'Test',
         email: 'test@test.com',
         timestamp: new Date(),
-        branch: 'main',
         remoteUrl: 'https://gitlab.com/owner/repo.git',
       };
 
@@ -78,7 +75,6 @@ describe('GitHubPlugin', () => {
         author: 'Test',
         email: 'test@test.com',
         timestamp: new Date(),
-        branch: 'main',
       };
 
       expect(plugin.isRelevant(commit, {})).toBe(false);
@@ -114,7 +110,6 @@ describe('GitHubPlugin', () => {
       author: 'Test User',
       email: 'test@test.com',
       timestamp: new Date(),
-      branch: 'feature-branch',
       remoteUrl: 'https://github.com/owner/repo.git',
     };
 

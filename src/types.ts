@@ -9,9 +9,15 @@ export interface Commit {
   author: string;
   email: string;
   timestamp: Date;
-  branch: string;
   remoteUrl?: string;
   filesChanged?: string[];
+}
+
+// Repository configuration
+export interface RepoConfig {
+  path: string;
+  mainBranch: string;  // User specifies: main, master, develop, trunk, etc.
+  remoteUrl?: string;
 }
 
 // Enrichment data from plugins

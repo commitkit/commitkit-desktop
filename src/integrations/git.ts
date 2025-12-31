@@ -15,9 +15,11 @@ export class GitPlugin implements Plugin {
 
   private git: SimpleGit;
   private repoPath: string;
+  private mainBranch: string;
 
-  constructor(repoPath: string) {
+  constructor(repoPath: string, mainBranch: string = 'main') {
     this.repoPath = repoPath;
+    this.mainBranch = mainBranch;
     this.git = simpleGit(repoPath);
   }
 
@@ -44,7 +46,8 @@ export class GitPlugin implements Plugin {
   }
 
   /**
-   * Get commits from the repository
+   * Get commits from the repository's main branch
+   * Only returns commits that have been merged to main (i.e., shipped work)
    */
   async getCommits(options: {
     since?: string;
@@ -52,7 +55,7 @@ export class GitPlugin implements Plugin {
     maxCount?: number;
     author?: string;
   } = {}): Promise<Commit[]> {
-    const logOptions: string[] = [];
+    const logOptions: string[] = [this.mainBranch];
 
     if (options.since) logOptions.push(`--since=${options.since}`);
     if (options.until) logOptions.push(`--until=${options.until}`);
@@ -61,7 +64,6 @@ export class GitPlugin implements Plugin {
 
     const log = await this.git.log(logOptions);
     const remoteUrl = await this.getRemoteUrl();
-    const currentBranch = await this.getCurrentBranch();
 
     return log.all.map(entry => ({
       hash: entry.hash,
@@ -69,7 +71,6 @@ export class GitPlugin implements Plugin {
       author: entry.author_name,
       email: entry.author_email,
       timestamp: new Date(entry.date),
-      branch: currentBranch,
       remoteUrl,
     }));
   }
