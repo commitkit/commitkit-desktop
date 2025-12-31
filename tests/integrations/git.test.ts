@@ -7,8 +7,8 @@
 import { GitPlugin } from '../../src/integrations/git';
 import path from 'path';
 
-// Use the CommitKit repo itself for testing
-const TEST_REPO_PATH = path.resolve(__dirname, '../../../');
+// Use the commitkit-desktop repo itself for testing
+const TEST_REPO_PATH = path.resolve(__dirname, '../../');
 
 describe('GitPlugin', () => {
   let plugin: GitPlugin;
