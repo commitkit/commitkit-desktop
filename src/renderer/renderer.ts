@@ -407,43 +407,68 @@ function renderGroupedBullets() {
   }
 
   groupedBulletsContainer.classList.remove('hidden');
+  // Separate epic groups from individual bullets
+  const epicGroups = groupedBullets.filter(g => g.groupType === 'epic');
+  const individualBullets = groupedBullets.filter(g => g.groupType === 'individual');
+
   groupedBulletsContainer.innerHTML = `
-    <h3 style="margin-bottom: 16px; color: #f0f0f0;">Grouped Bullets (${groupedBullets.length} groups from ${selectedCommits.size} commits)</h3>
-    ${groupedBullets.map((group, index) => `
-      <div class="grouped-bullet-item" style="background: #2a2a2a; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
-        <div class="group-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-          <div>
-            <span class="group-name" style="font-weight: 600; color: #f0f0f0; font-size: 14px;">${escapeHtml(group.groupName)}</span>
-            <span class="group-meta" style="color: #888; font-size: 12px; margin-left: 8px;">
-              ${group.commitCount} commits · ${group.issueCount} tickets
-              ${group.groupType === 'epic' ? ' · Epic' : group.groupType === 'project' ? ' · Project' : ''}
-            </span>
-          </div>
-          <div class="group-badges">
-            ${group.sprint ? `<span class="badge" style="background: #3b82f6; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 4px;">${escapeHtml(group.sprint)}</span>` : ''}
-            ${group.labels.slice(0, 3).map(label =>
-              `<span class="badge" style="background: #6b7280; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 4px;">${escapeHtml(label)}</span>`
-            ).join('')}
-            ${group.labels.length > 3 ? `<span style="color: #888; font-size: 11px; margin-left: 4px;">+${group.labels.length - 3} more</span>` : ''}
-          </div>
-        </div>
-        <div class="bullet-text" style="background: #1a1a1a; padding: 12px; border-radius: 6px; color: #10b981; font-size: 14px; line-height: 1.5; margin-bottom: 12px;">
-          ${escapeHtml(group.text)}
-        </div>
-        <div class="bullet-actions" style="display: flex; gap: 8px;">
-          <button data-copy-group="${index}" style="background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Copy</button>
-          <button data-toggle-group="${index}" class="secondary" style="background: #374151; color: #d1d5db; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Show Commits (${group.commitCount})</button>
-        </div>
-        <div id="group-commits-${index}" class="group-commits hidden" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #374151;">
-          ${group.commits.map(c => `
-            <div style="font-size: 12px; color: #9ca3af; padding: 4px 0; display: flex;">
-              <span style="font-family: monospace; color: #6b7280; min-width: 70px;">${c.hash.substring(0, 7)}</span>
-              <span style="color: #d1d5db;">${escapeHtml(c.message.substring(0, 80))}${c.message.length > 80 ? '...' : ''}</span>
+    ${epicGroups.length > 0 ? `
+      <h3 style="margin-bottom: 16px; color: #f0f0f0;">Feature Bullets (${epicGroups.length} epics)</h3>
+      ${epicGroups.map((group, index) => `
+        <div class="grouped-bullet-item" style="background: #2a2a2a; border-radius: 8px; padding: 16px; margin-bottom: 12px; border-left: 3px solid #8b5cf6;">
+          <div class="group-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+            <div>
+              <span class="group-name" style="font-weight: 600; color: #f0f0f0; font-size: 14px;">${escapeHtml(group.groupName)}</span>
+              <span class="group-meta" style="color: #888; font-size: 12px; margin-left: 8px;">
+                ${group.commitCount} commits · ${group.issueCount} tickets · Epic
+              </span>
             </div>
-          `).join('')}
+            <div class="group-badges">
+              ${group.sprint ? `<span class="badge" style="background: #3b82f6; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 4px;">${escapeHtml(group.sprint)}</span>` : ''}
+              ${group.labels.slice(0, 3).map(label =>
+                `<span class="badge" style="background: #6b7280; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 4px;">${escapeHtml(label)}</span>`
+              ).join('')}
+              ${group.labels.length > 3 ? `<span style="color: #888; font-size: 11px; margin-left: 4px;">+${group.labels.length - 3} more</span>` : ''}
+            </div>
+          </div>
+          <div class="bullet-text" style="background: #1a1a1a; padding: 12px; border-radius: 6px; color: #10b981; font-size: 14px; line-height: 1.5; margin-bottom: 12px;">
+            ${escapeHtml(group.text)}
+          </div>
+          <div class="bullet-actions" style="display: flex; gap: 8px;">
+            <button data-copy-group="${index}" style="background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Copy</button>
+            <button data-toggle-group="${index}" class="secondary" style="background: #374151; color: #d1d5db; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Show Commits (${group.commitCount})</button>
+          </div>
+          <div id="group-commits-${index}" class="group-commits hidden" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #374151;">
+            ${group.commits.map(c => `
+              <div style="font-size: 12px; color: #9ca3af; padding: 4px 0; display: flex;">
+                <span style="font-family: monospace; color: #6b7280; min-width: 70px;">${c.hash.substring(0, 7)}</span>
+                <span style="color: #d1d5db;">${escapeHtml(c.message.substring(0, 80))}${c.message.length > 80 ? '...' : ''}</span>
+              </div>
+            `).join('')}
+          </div>
         </div>
-      </div>
-    `).join('')}
+      `).join('')}
+    ` : ''}
+
+    ${individualBullets.length > 0 ? `
+      <h3 style="margin: 24px 0 16px 0; color: #f0f0f0;">Individual Bullets (${individualBullets.length} commits without epics)</h3>
+      ${individualBullets.map((group, i) => {
+        const index = epicGroups.length + i;
+        return `
+        <div class="grouped-bullet-item" style="background: #252525; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+            <div style="flex: 1;">
+              <span style="font-family: monospace; color: #6b7280; font-size: 12px;">${group.groupKey}</span>
+              ${group.issueCount > 0 ? `<span style="color: #888; font-size: 12px; margin-left: 8px;">· ${group.issueCount} ticket${group.issueCount > 1 ? 's' : ''}</span>` : ''}
+            </div>
+            <button data-copy-group="${index}" style="background: #3b82f6; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px;">Copy</button>
+          </div>
+          <div class="bullet-text" style="color: #10b981; font-size: 13px; line-height: 1.4;">
+            ${escapeHtml(group.text)}
+          </div>
+        </div>
+      `}).join('')}
+    ` : ''}
   `;
 
   // Attach event listeners (CSP blocks inline onclick)

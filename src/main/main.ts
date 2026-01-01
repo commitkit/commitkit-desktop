@@ -113,111 +113,87 @@ function enrichCommitWithCache(
 }
 
 /**
- * Group commits by epic (preferred) or project key (fallback)
- * Commits without JIRA refs go into an "ungrouped" bucket
+ * Group commits by epic only (hybrid approach)
+ * Commits without epics are returned separately for individual bullet generation
  */
 function groupCommitsByFeature(
   commits: Commit[],
   jiraCache: Map<string, JiraIssue>
-): CommitGroup[] {
+): { groups: CommitGroup[]; ungroupedCommits: Array<{ commit: Commit; issues: JiraIssue[] }> } {
   const groups = new Map<string, CommitGroup>();
-  const ungroupedCommits: Commit[] = [];
+  const ungroupedCommits: Array<{ commit: Commit; issues: JiraIssue[] }> = [];
 
   for (const commit of commits) {
     const matches = commit.message.match(JIRA_KEY_REGEX);
-    if (!matches || matches.length === 0) {
-      ungroupedCommits.push(commit);
-      continue;
-    }
 
-    // Find the first ticket with an epic, or use project key as fallback
-    let groupKey: string | null = null;
-    let groupType: 'epic' | 'project' = 'project';
-    let groupName = '';
+    // Collect all JIRA issues for this commit
     const commitIssues: JiraIssue[] = [];
+    let epicKey: string | null = null;
+    let epicName = '';
 
-    for (const match of matches) {
-      const issue = jiraCache.get(match.toUpperCase());
-      if (issue) {
-        commitIssues.push(issue);
-        // Prefer epic grouping
-        if (issue.epicKey && !groupKey) {
-          groupKey = issue.epicKey;
-          groupType = 'epic';
-          groupName = issue.epicName || issue.epicKey;
-        }
-      }
-    }
-
-    // Fallback to project key if no epic found
-    if (!groupKey && matches.length > 0) {
-      const projectKey = matches[0].toUpperCase().split('-')[0];
-      groupKey = projectKey;
-      groupType = 'project';
-      groupName = `${projectKey} Project`;
-    }
-
-    if (!groupKey) {
-      ungroupedCommits.push(commit);
-      continue;
-    }
-
-    // Add to existing group or create new one
-    if (groups.has(groupKey)) {
-      const group = groups.get(groupKey)!;
-      group.commits.push(commit);
-      // Add unique issues
-      for (const issue of commitIssues) {
-        if (!group.jiraIssues.find(i => i.key === issue.key)) {
-          group.jiraIssues.push(issue);
-        }
-      }
-      // Merge labels
-      for (const issue of commitIssues) {
-        for (const label of issue.labels || []) {
-          if (!group.labels.includes(label)) {
-            group.labels.push(label);
+    if (matches) {
+      for (const match of matches) {
+        const issue = jiraCache.get(match.toUpperCase());
+        if (issue) {
+          commitIssues.push(issue);
+          // Find epic if available
+          if (issue.epicKey && !epicKey) {
+            epicKey = issue.epicKey;
+            epicName = issue.epicName || issue.epicKey;
           }
         }
+      }
+    }
+
+    // Only group if we have an epic
+    if (epicKey) {
+      if (groups.has(epicKey)) {
+        const group = groups.get(epicKey)!;
+        group.commits.push(commit);
+        // Add unique issues
+        for (const issue of commitIssues) {
+          if (!group.jiraIssues.find(i => i.key === issue.key)) {
+            group.jiraIssues.push(issue);
+          }
+        }
+        // Merge labels
+        for (const issue of commitIssues) {
+          for (const label of issue.labels || []) {
+            if (!group.labels.includes(label)) {
+              group.labels.push(label);
+            }
+          }
+        }
+      } else {
+        const allLabels: string[] = [];
+        for (const issue of commitIssues) {
+          for (const label of issue.labels || []) {
+            if (!allLabels.includes(label)) {
+              allLabels.push(label);
+            }
+          }
+        }
+        groups.set(epicKey, {
+          groupKey: epicKey,
+          groupType: 'epic',
+          groupName: epicName,
+          commits: [commit],
+          jiraIssues: commitIssues,
+          sprint: commitIssues[0]?.sprint,
+          labels: allLabels,
+        });
       }
     } else {
-      const allLabels: string[] = [];
-      for (const issue of commitIssues) {
-        for (const label of issue.labels || []) {
-          if (!allLabels.includes(label)) {
-            allLabels.push(label);
-          }
-        }
-      }
-      groups.set(groupKey, {
-        groupKey,
-        groupType,
-        groupName,
-        commits: [commit],
-        jiraIssues: commitIssues,
-        sprint: commitIssues[0]?.sprint,
-        labels: allLabels,
-      });
+      // No epic - will generate individual bullet
+      ungroupedCommits.push({ commit, issues: commitIssues });
     }
   }
 
-  // Add ungrouped commits as their own group
-  const result = Array.from(groups.values());
-  if (ungroupedCommits.length > 0) {
-    result.push({
-      groupKey: 'ungrouped',
-      groupType: 'ungrouped',
-      groupName: 'Other Commits',
-      commits: ungroupedCommits,
-      jiraIssues: [],
-      labels: [],
-    });
-  }
+  // Sort groups by number of commits (largest first)
+  const sortedGroups = Array.from(groups.values());
+  sortedGroups.sort((a, b) => b.commits.length - a.commits.length);
 
-  // Sort by number of commits (largest groups first)
-  result.sort((a, b) => b.commits.length - a.commits.length);
-
-  return result;
+  return { groups: sortedGroups, ungroupedCommits };
 }
 
 function createWindow() {
@@ -538,14 +514,17 @@ ipcMain.handle('generate-grouped-bullets', async (_event, commitHashes: string[]
       }
     }
 
-    // Group commits by epic/project
-    const groups = groupCommitsByFeature(selectedCommits, jiraCache);
+    // Group commits by epic (hybrid approach)
+    const { groups, ungroupedCommits } = groupCommitsByFeature(selectedCommits, jiraCache);
     console.log('[GROUPED] Created groups:', groups.map(g => ({
       key: g.groupKey,
       name: g.groupName,
       commits: g.commits.length,
       issues: g.jiraIssues.length,
     })));
+    console.log('[GROUPED] Ungrouped commits (no epic):', ungroupedCommits.length);
+
+    const totalItems = groups.length + ungroupedCommits.length;
 
     // Generate a bullet for each group
     const results: Array<{
@@ -561,13 +540,14 @@ ipcMain.handle('generate-grouped-bullets', async (_event, commitHashes: string[]
       sprint?: string;
     }> = [];
 
+    // Generate grouped bullets for epic-based groups
     for (let i = 0; i < groups.length; i++) {
       const group = groups[i];
 
       if (mainWindow) {
         mainWindow.webContents.send('generation-progress', {
           current: i + 1,
-          total: groups.length,
+          total: totalItems,
           message: `Generating bullet for "${group.groupName}" (${group.commits.length} commits)...`,
         });
       }
@@ -585,6 +565,46 @@ ipcMain.handle('generate-grouped-bullets', async (_event, commitHashes: string[]
         commits: group.commits.map(c => ({ hash: c.hash, message: c.message.split('\n')[0] })),
         labels: group.labels,
         sprint: group.sprint,
+      });
+    }
+
+    // Generate individual bullets for commits without epics
+    for (let i = 0; i < ungroupedCommits.length; i++) {
+      const { commit, issues } = ungroupedCommits[i];
+
+      if (mainWindow) {
+        mainWindow.webContents.send('generation-progress', {
+          current: groups.length + i + 1,
+          total: totalItems,
+          message: `Generating bullet ${groups.length + i + 1} of ${totalItems}...`,
+        });
+      }
+
+      // Build enrichment context from cached issues
+      const enrichments: EnrichmentContext = {};
+      if (issues.length > 0) {
+        enrichments['jira'] = {
+          pluginId: 'jira',
+          data: { issues },
+        };
+      }
+
+      const bullet = await ollama.generateCVBullet(commit, enrichments);
+
+      // Add as individual "group" with single commit
+      const ticketKey = issues[0]?.key || commit.hash.substring(0, 7);
+      const ticketSummary = issues[0]?.summary || commit.message.split('\n')[0];
+      results.push({
+        groupKey: ticketKey,
+        groupName: ticketSummary.substring(0, 60) + (ticketSummary.length > 60 ? '...' : ''),
+        groupType: 'individual',
+        commitCount: 1,
+        issueCount: issues.length,
+        text: bullet.text,
+        generatedAt: bullet.generatedAt.toISOString(),
+        commits: [{ hash: commit.hash, message: commit.message.split('\n')[0] }],
+        labels: issues.flatMap(i => i.labels || []),
+        sprint: issues[0]?.sprint,
       });
     }
 
