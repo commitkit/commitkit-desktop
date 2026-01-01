@@ -59,7 +59,7 @@ export interface CommitKitAPI {
   generateBullets: (commitHashes: string[], repoPath: string) => Promise<BulletData[]>;
   checkOllamaStatus: () => Promise<{ connected: boolean; model?: string; error?: string }>;
   getOllamaModels: () => Promise<{ installed: string[]; recommended: Array<{ name: string; description: string }>; current: string; error?: string }>;
-  getConfig: () => Promise<{ github?: { configured: boolean }; jira?: { configured: boolean; baseUrl?: string }; ollama?: { host?: string; model?: string } }>;
+  getConfig: () => Promise<{ github?: { token: string }; jira?: { baseUrl: string; email: string; apiToken: string }; ollama?: { host?: string; model?: string } }>;
   saveConfig: (config: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>;
   testGitHub: (token: string) => Promise<{ success: boolean; error?: string }>;
   testJira: (config: { baseUrl: string; email: string; apiToken: string }) => Promise<{ success: boolean; error?: string }>;

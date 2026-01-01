@@ -406,13 +406,12 @@ ipcMain.handle('get-ollama-models', async () => {
   }
 });
 
-// Get current config
+// Get current config (includes credentials for settings form)
 ipcMain.handle('get-config', () => {
   const config = getConfig();
-  // Return config without sensitive fields for display
   return {
-    github: config.github ? { configured: true } : undefined,
-    jira: config.jira ? { configured: true, baseUrl: config.jira.baseUrl } : undefined,
+    github: config.github,
+    jira: config.jira,
     ollama: config.ollama,
   };
 });

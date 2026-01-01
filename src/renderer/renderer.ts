@@ -371,6 +371,17 @@ async function openSettings() {
   jiraStatus.textContent = '';
   jiraStatus.className = 'status-text';
 
+  // Load saved config into form fields
+  const config = await window.commitkit.getConfig();
+  if (config.github?.token) {
+    githubToken.value = config.github.token;
+  }
+  if (config.jira) {
+    jiraBaseUrl.value = config.jira.baseUrl || '';
+    jiraEmail.value = config.jira.email || '';
+    jiraApiToken.value = config.jira.apiToken || '';
+  }
+
   // Load available models
   await loadOllamaModels();
 }
