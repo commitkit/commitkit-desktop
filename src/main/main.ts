@@ -225,12 +225,17 @@ ipcMain.handle('generate-bullets', async (_event, commitHashes: string[], repoPa
     });
 
     // Ensure model is available, pull if needed
-    const modelReady = await ollama.ensureModelAvailable((status) => {
+    const modelReady = await ollama.ensureModelAvailable((status, completed, total) => {
       if (mainWindow) {
+        // Calculate download percentage for the current layer
+        const percent = (completed && total) ? Math.round((completed / total) * 100) : 0;
+        const sizeInfo = (completed && total)
+          ? ` (${Math.round(completed / 1024 / 1024)}MB / ${Math.round(total / 1024 / 1024)}MB)`
+          : '';
         mainWindow.webContents.send('generation-progress', {
-          current: 0,
-          total: commitHashes.length,
-          message: `Downloading model: ${status}`,
+          current: percent,
+          total: 100,
+          message: `Downloading model: ${status}${sizeInfo}`,
         });
       }
     });

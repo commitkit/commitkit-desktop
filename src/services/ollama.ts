@@ -71,12 +71,12 @@ export class OllamaProvider implements AIProvider {
   /**
    * Pull the model from Ollama registry
    */
-  async pullModel(onProgress?: (status: string) => void): Promise<boolean> {
+  async pullModel(onProgress?: (status: string, completed?: number, total?: number) => void): Promise<boolean> {
     try {
       const stream = await this.client.pull({ model: this.model, stream: true });
       for await (const progress of stream) {
         if (onProgress && progress.status) {
-          onProgress(progress.status);
+          onProgress(progress.status, progress.completed, progress.total);
         }
       }
       return true;
@@ -89,7 +89,7 @@ export class OllamaProvider implements AIProvider {
   /**
    * Ensure model is available, pulling if necessary
    */
-  async ensureModelAvailable(onProgress?: (status: string) => void): Promise<boolean> {
+  async ensureModelAvailable(onProgress?: (status: string, completed?: number, total?: number) => void): Promise<boolean> {
     const available = await this.isModelAvailable();
     if (available) {
       return true;
