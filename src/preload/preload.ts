@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('commitkit', {
 
   // Ollama status
   checkOllamaStatus: () => ipcRenderer.invoke('check-ollama-status'),
+  getOllamaModels: () => ipcRenderer.invoke('get-ollama-models'),
 
   // Config
   getConfig: () => ipcRenderer.invoke('get-config'),
@@ -57,6 +58,7 @@ export interface CommitKitAPI {
   generateBullet: (commitHash: string, repoPath: string) => Promise<BulletData>;
   generateBullets: (commitHashes: string[], repoPath: string) => Promise<BulletData[]>;
   checkOllamaStatus: () => Promise<{ connected: boolean; model?: string; error?: string }>;
+  getOllamaModels: () => Promise<{ installed: string[]; recommended: Array<{ name: string; description: string }>; current: string; error?: string }>;
   getConfig: () => Promise<{ github?: { configured: boolean }; jira?: { configured: boolean; baseUrl?: string }; ollama?: { host?: string; model?: string } }>;
   saveConfig: (config: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>;
   testGitHub: (token: string) => Promise<{ success: boolean; error?: string }>;

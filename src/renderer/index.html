@@ -356,6 +356,41 @@
       border-color: #3b82f6;
     }
 
+    .form-group select,
+    .model-select {
+      width: 100%;
+      padding: 10px 12px;
+      background: #0f3460;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #eee;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .form-group select:focus,
+    .model-select:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+
+    .form-group select option,
+    .model-select option {
+      background: #0f3460;
+      color: #eee;
+    }
+
+    .model-select optgroup {
+      font-weight: bold;
+      color: #888;
+      background: #16213e;
+    }
+
+    .model-select option {
+      font-weight: normal;
+      padding: 8px;
+    }
+
     .form-actions {
       display: flex;
       justify-content: space-between;
@@ -574,6 +609,18 @@
           <button id="closeSettingsBtn" class="close-btn">&times;</button>
         </div>
         <div class="modal-body">
+          <!-- Ollama Section -->
+          <div class="settings-section">
+            <h3>Ollama Model</h3>
+            <p class="settings-desc">Select the AI model for generating CV bullets. Larger models produce better results but are slower.</p>
+            <div class="form-group">
+              <label>Model</label>
+              <select id="ollamaModel" class="model-select">
+                <option value="">Loading models...</option>
+              </select>
+            </div>
+          </div>
+
           <!-- GitHub Section -->
           <div class="settings-section">
             <h3>GitHub</h3>

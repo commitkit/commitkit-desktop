@@ -72,6 +72,7 @@ const jiraEmail = document.getElementById('jiraEmail') as HTMLInputElement;
 const jiraApiToken = document.getElementById('jiraApiToken') as HTMLInputElement;
 const testJiraBtn = document.getElementById('testJiraBtn') as HTMLButtonElement;
 const jiraStatus = document.getElementById('jiraStatus') as HTMLElement;
+const ollamaModel = document.getElementById('ollamaModel') as HTMLSelectElement;
 
 // Initialize
 async function init() {
@@ -362,13 +363,64 @@ function formatDate(isoString: string): string {
 }
 
 // Settings functions
-function openSettings() {
+async function openSettings() {
   settingsModal.classList.remove('hidden');
   // Clear status messages
   githubStatus.textContent = '';
   githubStatus.className = 'status-text';
   jiraStatus.textContent = '';
   jiraStatus.className = 'status-text';
+
+  // Load available models
+  await loadOllamaModels();
+}
+
+async function loadOllamaModels() {
+  ollamaModel.innerHTML = '<option value="">Loading models...</option>';
+
+  const result = await window.commitkit.getOllamaModels();
+
+  ollamaModel.innerHTML = '';
+
+  // Add installed models group
+  if (result.installed.length > 0) {
+    const installedGroup = document.createElement('optgroup');
+    installedGroup.label = 'Installed';
+    result.installed.forEach((model: string) => {
+      const option = document.createElement('option');
+      option.value = model;
+      option.textContent = model;
+      if (model === result.current || model.startsWith(result.current)) {
+        option.selected = true;
+      }
+      installedGroup.appendChild(option);
+    });
+    ollamaModel.appendChild(installedGroup);
+  }
+
+  // Add recommended models group (not yet installed)
+  if (result.recommended.length > 0) {
+    const recommendedGroup = document.createElement('optgroup');
+    recommendedGroup.label = 'Available to Download';
+    result.recommended.forEach((model: { name: string; description: string }) => {
+      const option = document.createElement('option');
+      option.value = model.name;
+      option.textContent = `${model.name} - ${model.description}`;
+      if (model.name === result.current) {
+        option.selected = true;
+      }
+      recommendedGroup.appendChild(option);
+    });
+    ollamaModel.appendChild(recommendedGroup);
+  }
+
+  // If no models at all, show a message
+  if (result.installed.length === 0 && result.recommended.length === 0) {
+    const option = document.createElement('option');
+    option.value = 'qwen2.5:14b';
+    option.textContent = 'qwen2.5:14b (will download on first use)';
+    ollamaModel.appendChild(option);
+  }
 }
 
 function closeSettings() {
@@ -377,6 +429,11 @@ function closeSettings() {
 
 async function saveSettings() {
   const config: Record<string, unknown> = {};
+
+  // Ollama config
+  if (ollamaModel.value) {
+    config.ollama = { model: ollamaModel.value };
+  }
 
   // GitHub config
   if (githubToken.value.trim()) {
@@ -395,6 +452,8 @@ async function saveSettings() {
   const result = await window.commitkit.saveConfig(config);
   if (result.success) {
     closeSettings();
+    // Refresh Ollama status to show new model
+    await checkOllamaStatus();
   } else {
     alert('Failed to save settings: ' + result.error);
   }

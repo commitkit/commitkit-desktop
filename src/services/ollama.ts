@@ -69,6 +69,35 @@ export class OllamaProvider implements AIProvider {
   }
 
   /**
+   * Get list of installed models
+   */
+  async getInstalledModels(): Promise<string[]> {
+    try {
+      const result = await this.client.list();
+      return result.models.map(m => m.name);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Recommended models for CV bullet generation
+   * Ordered by quality/size tradeoff
+   */
+  static getRecommendedModels(): Array<{ name: string; description: string }> {
+    return [
+      { name: 'qwen2.5:14b', description: 'Best quality (9GB)' },
+      { name: 'qwen2.5:7b', description: 'Good balance (4.7GB)' },
+      { name: 'qwen2.5:3b', description: 'Fast & light (1.9GB)' },
+      { name: 'llama3.2:3b', description: 'Meta Llama (2GB)' },
+      { name: 'llama3.2:1b', description: 'Smallest Llama (1.3GB)' },
+      { name: 'mistral:7b', description: 'Mistral 7B (4.1GB)' },
+      { name: 'gemma2:9b', description: 'Google Gemma (5.4GB)' },
+      { name: 'phi3:medium', description: 'Microsoft Phi-3 (7.9GB)' },
+    ];
+  }
+
+  /**
    * Pull the model from Ollama registry
    */
   async pullModel(onProgress?: (status: string, completed?: number, total?: number) => void): Promise<boolean> {

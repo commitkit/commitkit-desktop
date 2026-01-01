@@ -305,6 +305,35 @@ ipcMain.handle('check-ollama-status', async () => {
   }
 });
 
+// Get available Ollama models (installed + recommended)
+ipcMain.handle('get-ollama-models', async () => {
+  try {
+    const config = getConfig();
+    const ollama = new OllamaProvider({
+      host: config.ollama?.host,
+    });
+
+    const installed = await ollama.getInstalledModels();
+    const recommended = OllamaProvider.getRecommendedModels();
+    const currentModel = config.ollama?.model || 'qwen2.5:14b';
+
+    // Build list: installed models first, then recommended ones not yet installed
+    const installedSet = new Set(installed.map(m => m.split(':')[0])); // normalize names
+    const availableRecommended = recommended.filter(r => {
+      const baseName = r.name.split(':')[0];
+      return !installedSet.has(baseName);
+    });
+
+    return {
+      installed,
+      recommended: availableRecommended,
+      current: currentModel,
+    };
+  } catch (error) {
+    return { installed: [], recommended: OllamaProvider.getRecommendedModels(), current: 'qwen2.5:14b', error: String(error) };
+  }
+});
+
 // Get current config
 ipcMain.handle('get-config', () => {
   const config = getConfig();
