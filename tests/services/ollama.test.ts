@@ -12,10 +12,10 @@ import { Commit, EnrichmentContext, JiraIssue, GitHubPR } from '../../src/types'
 jest.mock('ollama', () => ({
   Ollama: jest.fn().mockImplementation(() => ({
     generate: jest.fn().mockResolvedValue({
-      response: '  Implemented user authentication system reducing login failures by 40%  ',
+      response: '  Implemented user authentication system with OAuth2 support  ',
     }),
     list: jest.fn().mockResolvedValue({
-      models: [{ name: 'llama3.2:latest' }],
+      models: [{ name: 'qwen2.5:14b' }],
     }),
   })),
 }));
@@ -56,7 +56,7 @@ describe('OllamaProvider', () => {
   describe('generateText', () => {
     it('should return trimmed response', async () => {
       const result = await provider.generateText('Test prompt');
-      expect(result).toBe('Implemented user authentication system reducing login failures by 40%');
+      expect(result).toBe('Implemented user authentication system with OAuth2 support');
     });
   });
 
@@ -93,9 +93,9 @@ describe('OllamaProvider', () => {
       const prompt = provider.buildPrompt(baseCommit, {});
 
       expect(prompt).toContain('Add user authentication with OAuth2');
-      expect(prompt).toContain('Jane Developer');
-      expect(prompt).toContain('strong action verb');
-      expect(prompt).toContain('business value');
+      expect(prompt).toContain('past-tense action verb');
+      expect(prompt).toContain('NEVER invent metrics');
+      expect(prompt).toContain('English only');
     });
 
     it('should include JIRA context when available', () => {
@@ -196,7 +196,7 @@ describe('OllamaProvider', () => {
       expect(result.enrichments).toEqual({});
       expect(result.generatedAt).toBeInstanceOf(Date);
       expect(result.aiProvider).toBe('ollama');
-      expect(result.aiModel).toBe('llama3.2');
+      expect(result.aiModel).toBe('qwen2.5:14b');
     });
   });
 

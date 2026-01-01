@@ -26,7 +26,7 @@ export class OllamaProvider implements AIProvider {
 
   constructor(config: OllamaConfig = {}) {
     this.client = new Ollama({ host: config.host || 'http://localhost:11434' });
-    this.model = config.model || 'llama3.2';
+    this.model = config.model || 'qwen2.5:14b';
     this.temperature = config.temperature ?? 0.7;
   }
 
@@ -95,16 +95,21 @@ export class OllamaProvider implements AIProvider {
     const parts: string[] = [];
 
     // Base instruction
-    parts.push(`Generate a professional CV/resume bullet point for the following work accomplishment.
-The bullet should:
-- Start with a strong action verb (e.g., Implemented, Developed, Optimized, Resolved)
-- Quantify impact when possible
-- Focus on business value, not just technical details
-- Be 1-2 sentences maximum
-- Be written in past tense
+    parts.push(`Transform this git commit into a single professional CV/resume bullet point.
 
-Commit message: ${commit.message}
-Author: ${commit.author}`);
+STRICT RULES:
+1. Respond in English only
+2. Start with a strong past-tense action verb (Implemented, Developed, Fixed, etc.)
+3. Maximum 20 words - be concise
+4. Summarize the overall accomplishment, don't list individual files or changes
+5. NEVER invent metrics, percentages, or impact claims not in the original
+6. NEVER start with a dash, bullet marker, or quotation mark
+7. Use natural phrasing (say "Updated Brakeman to v7.1.2" not "Implemented update of Brakeman")
+8. For "Empty commit" or commits with no meaningful content, output exactly: "Made minor project housekeeping changes"
+9. Do NOT include the author's name in the output
+
+Commit message:
+${commit.message}`);
 
     // Add JIRA context if available
     const jiraData = enrichments['jira'];
