@@ -13,6 +13,8 @@ export interface SavedRepo {
   path: string;
   name: string;  // Display name (usually folder name)
   addedAt: string;
+  branch?: string;  // Last used branch
+  author?: string;  // Last used author filter (email)
 }
 
 export interface AppConfig {
@@ -97,4 +99,22 @@ export function removeRepo(repoPath: string): void {
   const repos = config.repositories || [];
   const filtered = repos.filter(r => r.path !== repoPath);
   saveConfig({ ...config, repositories: filtered });
+}
+
+export function updateRepoSettings(repoPath: string, settings: { branch?: string; author?: string }): SavedRepo | null {
+  const config = getConfig();
+  const repos = config.repositories || [];
+  const repoIndex = repos.findIndex(r => r.path === repoPath);
+
+  if (repoIndex === -1) return null;
+
+  const updatedRepo = { ...repos[repoIndex], ...settings };
+  repos[repoIndex] = updatedRepo;
+  saveConfig({ ...config, repositories: repos });
+  return updatedRepo;
+}
+
+export function getRepoSettings(repoPath: string): SavedRepo | null {
+  const repos = getSavedRepos();
+  return repos.find(r => r.path === repoPath) || null;
 }

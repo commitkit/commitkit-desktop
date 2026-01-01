@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld('commitkit', {
   addRepository: () => ipcRenderer.invoke('add-repository'),
   removeRepository: (repoPath: string) => ipcRenderer.invoke('remove-repository', repoPath),
   selectRepository: () => ipcRenderer.invoke('select-repository'),
+  getRepoSettings: (repoPath: string) => ipcRenderer.invoke('get-repo-settings', repoPath),
+  updateRepoSettings: (repoPath: string, settings: { branch?: string; author?: string }) =>
+    ipcRenderer.invoke('update-repo-settings', repoPath, settings),
   getAuthors: (repoPath: string, branch?: string) =>
     ipcRenderer.invoke('get-authors', repoPath, branch),
   loadCommits: (repoPath: string, options?: { maxCount?: number; branch?: string; author?: string }) =>
@@ -47,6 +50,8 @@ export interface SavedRepo {
   path: string;
   name: string;
   addedAt: string;
+  branch?: string;
+  author?: string;
 }
 
 // TypeScript declaration for renderer
@@ -55,6 +60,8 @@ export interface CommitKitAPI {
   addRepository: () => Promise<SavedRepo | null | { error: string }>;
   removeRepository: (repoPath: string) => Promise<{ success: boolean }>;
   selectRepository: () => Promise<string | null>;
+  getRepoSettings: (repoPath: string) => Promise<SavedRepo | null>;
+  updateRepoSettings: (repoPath: string, settings: { branch?: string; author?: string }) => Promise<{ success: boolean; repo?: SavedRepo; error?: string }>;
   getAuthors: (repoPath: string, branch?: string) => Promise<Array<{ name: string; email: string }>>;
   loadCommits: (repoPath: string, options?: { maxCount?: number; branch?: string; author?: string }) => Promise<CommitData[]>;
   generateBullet: (commitHash: string, repoPath: string) => Promise<BulletData>;

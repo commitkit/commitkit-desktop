@@ -53,6 +53,8 @@ interface SavedRepo {
   path: string;
   name: string;
   addedAt: string;
+  branch?: string;
+  author?: string;
 }
 
 // DOM Elements
@@ -166,12 +168,34 @@ async function onRepoSelected() {
 
   currentRepoPath = selectedPath;
   repoPath.textContent = selectedPath;
+
+  // Load saved repo settings (branch, author)
+  const settings = await window.commitkit.getRepoSettings(selectedPath);
+  if (settings) {
+    if (settings.branch) {
+      branchInput.value = settings.branch;
+    } else {
+      branchInput.value = 'main'; // Default
+    }
+  }
+
   await loadAuthors();
+
+  // Set saved author filter after authors are loaded
+  if (settings?.author) {
+    authorSelect.value = settings.author;
+  }
+
   await loadCommits();
 }
 
 async function onBranchChanged() {
   if (!currentRepoPath) return;
+
+  // Save branch setting
+  const branch = branchInput.value.trim() || 'main';
+  await window.commitkit.updateRepoSettings(currentRepoPath, { branch });
+
   // Reload authors for new branch, then reload commits
   await loadAuthors();
   bullets.clear();
@@ -181,6 +205,11 @@ async function onBranchChanged() {
 
 async function onFiltersChanged() {
   if (!currentRepoPath) return;
+
+  // Save author filter setting
+  const author = authorSelect.value || undefined;
+  await window.commitkit.updateRepoSettings(currentRepoPath, { author });
+
   // Clear existing bullets and selection when filters change
   bullets.clear();
   selectedCommits.clear();

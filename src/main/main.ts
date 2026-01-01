@@ -10,7 +10,7 @@ import { GitPlugin } from '../integrations/git';
 import { GitHubPlugin } from '../integrations/github';
 import { JiraPlugin } from '../integrations/jira';
 import { OllamaProvider } from '../services/ollama';
-import { getConfig, updateConfig, AppConfig, getSavedRepos, addRepo, removeRepo } from '../services/config';
+import { getConfig, updateConfig, AppConfig, getSavedRepos, addRepo, removeRepo, updateRepoSettings, getRepoSettings } from '../services/config';
 import { Commit, EnrichmentContext, JiraIssue, CommitGroup } from '../types';
 
 // Set app name for macOS menu bar
@@ -250,6 +250,17 @@ ipcMain.handle('add-repository', async () => {
 ipcMain.handle('remove-repository', (_event, repoPath: string) => {
   removeRepo(repoPath);
   return { success: true };
+});
+
+// Update repo settings (branch, author)
+ipcMain.handle('update-repo-settings', (_event, repoPath: string, settings: { branch?: string; author?: string }) => {
+  const updated = updateRepoSettings(repoPath, settings);
+  return updated ? { success: true, repo: updated } : { success: false, error: 'Repository not found' };
+});
+
+// Get repo settings
+ipcMain.handle('get-repo-settings', (_event, repoPath: string) => {
+  return getRepoSettings(repoPath);
 });
 
 // Select a repository folder (legacy - for backward compatibility)
