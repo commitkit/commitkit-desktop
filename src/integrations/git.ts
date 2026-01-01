@@ -67,7 +67,7 @@ export class GitPlugin implements Plugin {
 
     return log.all.map(entry => ({
       hash: entry.hash,
-      message: entry.message,
+      message: entry.body ? `${entry.message}\n\n${entry.body}` : entry.message,
       author: entry.author_name,
       email: entry.author_email,
       timestamp: new Date(entry.date),
