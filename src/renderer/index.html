@@ -428,19 +428,38 @@
       color: #eee;
     }
 
-    .branch-input {
+    .branch-input,
+    .author-input,
+    .count-input {
       padding: 10px 12px;
       background: #0f3460;
       border: 1px solid #333;
       border-radius: 6px;
       color: #eee;
       font-size: 14px;
-      width: 120px;
     }
 
-    .branch-input:focus {
+    .branch-input {
+      width: 100px;
+    }
+
+    .author-input {
+      width: 180px;
+    }
+
+    .count-input {
+      width: 70px;
+    }
+
+    .branch-input:focus,
+    .author-input:focus,
+    .count-input:focus {
       outline: none;
       border-color: #3b82f6;
+    }
+
+    .count-input::-webkit-inner-spin-button {
+      opacity: 1;
     }
   </style>
 </head>
@@ -467,7 +486,9 @@
           <select id="repoSelect" class="repo-dropdown">
             <option value="">-- Select saved repo --</option>
           </select>
-          <input type="text" id="branchInput" class="branch-input" placeholder="main" value="main">
+          <input type="text" id="branchInput" class="branch-input" placeholder="main" value="main" title="Branch">
+          <input type="text" id="authorInput" class="author-input" placeholder="Author email" title="Filter by author email">
+          <input type="number" id="maxCountInput" class="count-input" placeholder="50" value="50" min="1" max="500" title="Max commits">
           <button id="addRepoBtn" class="secondary">+ Add</button>
         </div>
       </div>

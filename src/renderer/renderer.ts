@@ -42,6 +42,8 @@ interface SavedRepo {
 // DOM Elements
 const repoSelect = document.getElementById('repoSelect') as HTMLSelectElement;
 const branchInput = document.getElementById('branchInput') as HTMLInputElement;
+const authorInput = document.getElementById('authorInput') as HTMLInputElement;
+const maxCountInput = document.getElementById('maxCountInput') as HTMLInputElement;
 const addRepoBtn = document.getElementById('addRepoBtn') as HTMLButtonElement;
 const addRepoBtn2 = document.getElementById('addRepoBtn2') as HTMLButtonElement;
 const repoPath = document.getElementById('repoPath') as HTMLElement;
@@ -81,7 +83,9 @@ async function init() {
 
   // Set up event listeners
   repoSelect.addEventListener('change', onRepoSelected);
-  branchInput.addEventListener('change', onBranchChanged);
+  branchInput.addEventListener('change', onFiltersChanged);
+  authorInput.addEventListener('change', onFiltersChanged);
+  maxCountInput.addEventListener('change', onFiltersChanged);
   addRepoBtn.addEventListener('click', addRepository);
   addRepoBtn2.addEventListener('click', addRepository);
   selectAllBtn.addEventListener('click', toggleSelectAll);
@@ -128,9 +132,9 @@ async function onRepoSelected() {
   await loadCommits();
 }
 
-async function onBranchChanged() {
+async function onFiltersChanged() {
   if (!currentRepoPath) return;
-  // Clear existing bullets and selection when branch changes
+  // Clear existing bullets and selection when filters change
   bullets.clear();
   selectedCommits.clear();
   await loadCommits();
@@ -184,7 +188,9 @@ async function loadCommits() {
   commitsSection.classList.remove('hidden');
 
   const branch = branchInput.value.trim() || 'main';
-  const result = await window.commitkit.loadCommits(currentRepoPath, { maxCount: 50, branch }) as LoadCommitsResult;
+  const author = authorInput.value.trim() || undefined;
+  const maxCount = parseInt(maxCountInput.value, 10) || 50;
+  const result = await window.commitkit.loadCommits(currentRepoPath, { maxCount, branch, author }) as LoadCommitsResult;
 
   if (Array.isArray(result)) {
     commits = result;
