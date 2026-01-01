@@ -129,6 +129,7 @@ export class JiraPlugin implements Plugin {
             maxResults: batchSize,
             fields: [
               'summary',
+              'description',
               'issuetype',
               'status',
               'priority',
@@ -161,6 +162,32 @@ export class JiraPlugin implements Plugin {
   }
 
   /**
+   * Extract plain text from Atlassian Document Format (ADF)
+   * JIRA API v3 returns descriptions in this JSON format
+   */
+  private parseAdfToText(adf: unknown): string {
+    if (!adf || typeof adf !== 'object') return '';
+
+    const doc = adf as { content?: unknown[] };
+    if (!doc.content || !Array.isArray(doc.content)) return '';
+
+    const extractText = (nodes: unknown[]): string => {
+      const parts: string[] = [];
+      for (const node of nodes) {
+        const n = node as { type?: string; text?: string; content?: unknown[] };
+        if (n.type === 'text' && n.text) {
+          parts.push(n.text);
+        } else if (n.content && Array.isArray(n.content)) {
+          parts.push(extractText(n.content));
+        }
+      }
+      return parts.join(' ');
+    };
+
+    return extractText(doc.content).trim();
+  }
+
+  /**
    * Parse JIRA API response into JiraIssue
    */
   private parseIssue(data: { key: string; fields: Record<string, unknown> }): JiraIssue | null {
@@ -172,9 +199,13 @@ export class JiraPlugin implements Plugin {
       const priority = fields.priority as { name?: string } | undefined;
       const sprintData = fields[this.sprintField] as { name?: string } | undefined;
 
+      // Parse description from ADF format
+      const description = this.parseAdfToText(fields.description);
+
       return {
         key: data.key,
         summary: fields.summary as string || '',
+        description: description || undefined,
         issueType: issuetype?.name || 'Unknown',
         status: status?.name || 'Unknown',
         priority: priority?.name,

@@ -180,11 +180,18 @@ ${commit.message}`);
       const issues = jiraData.data.issues as JiraIssue[];
       if (issues.length > 0) {
         const issue = issues[0];
+        // Truncate description to avoid overwhelming the prompt
+        const descSnippet = issue.description
+          ? issue.description.substring(0, 500) + (issue.description.length > 500 ? '...' : '')
+          : '';
         parts.push(`
 JIRA Ticket: ${issue.key}
 Summary: ${issue.summary}
 Type: ${issue.issueType}
+${descSnippet ? `Description: ${descSnippet}` : ''}
 ${issue.epicName ? `Epic: ${issue.epicName}` : ''}
+${issue.sprint ? `Sprint: ${issue.sprint}` : ''}
+${issue.labels && issue.labels.length > 0 ? `Labels: ${issue.labels.join(', ')}` : ''}
 ${issue.storyPoints ? `Story Points: ${issue.storyPoints}` : ''}`);
       }
     }
