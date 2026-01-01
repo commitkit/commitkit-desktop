@@ -431,8 +431,8 @@ function renderGroupedBullets() {
           ${escapeHtml(group.text)}
         </div>
         <div class="bullet-actions" style="display: flex; gap: 8px;">
-          <button onclick="copyGroupedBullet(${index})" style="background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Copy</button>
-          <button onclick="toggleGroupCommits(${index})" class="secondary" style="background: #374151; color: #d1d5db; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Show Commits (${group.commitCount})</button>
+          <button data-copy-group="${index}" style="background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Copy</button>
+          <button data-toggle-group="${index}" class="secondary" style="background: #374151; color: #d1d5db; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Show Commits (${group.commitCount})</button>
         </div>
         <div id="group-commits-${index}" class="group-commits hidden" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #374151;">
           ${group.commits.map(c => `
@@ -445,22 +445,32 @@ function renderGroupedBullets() {
       </div>
     `).join('')}
   `;
+
+  // Attach event listeners (CSP blocks inline onclick)
+  groupedBulletsContainer.querySelectorAll('[data-copy-group]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const index = parseInt(btn.getAttribute('data-copy-group') || '0', 10);
+      const group = groupedBullets[index];
+      if (group) {
+        await navigator.clipboard.writeText(group.text);
+      }
+    });
+  });
+
+  groupedBulletsContainer.querySelectorAll('[data-toggle-group]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const index = btn.getAttribute('data-toggle-group');
+      const el = document.getElementById(`group-commits-${index}`);
+      if (el) {
+        el.classList.toggle('hidden');
+        // Update button text
+        const isHidden = el.classList.contains('hidden');
+        const group = groupedBullets[parseInt(index || '0', 10)];
+        btn.textContent = isHidden ? `Show Commits (${group?.commitCount || 0})` : 'Hide Commits';
+      }
+    });
+  });
 }
-
-// Global functions for grouped bullets
-(window as any).copyGroupedBullet = async (index: number) => {
-  const group = groupedBullets[index];
-  if (group) {
-    await navigator.clipboard.writeText(group.text);
-  }
-};
-
-(window as any).toggleGroupCommits = (index: number) => {
-  const el = document.getElementById(`group-commits-${index}`);
-  if (el) {
-    el.classList.toggle('hidden');
-  }
-};
 
 // Global functions for button onclick handlers
 (window as any).copyBullet = async (hash: string) => {
