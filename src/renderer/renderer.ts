@@ -54,6 +54,18 @@ let expandedCommits: Set<string> = new Set();
 let commitGroupOverrides: Map<string, string | null> = new Map(); // commit hash -> group key (null = no group)
 let availableGroups: Array<{ key: string; name: string }> = [];
 
+// STAR card editing state
+interface StarEdits {
+  situation?: string;
+  task?: string;
+  action?: string;
+  result?: string;
+}
+let bulletEditMode: Set<number> = new Set(); // indices of bullets in edit mode
+let bulletEdits: Map<number, StarEdits> = new Map(); // index -> edited STAR values
+let bulletContext: Map<number, string> = new Map(); // index -> user context notes
+let expandedStarSections: Map<number, Set<string>> = new Map(); // index -> set of expanded sections (s/t/a/r)
+
 interface SavedRepo {
   path: string;
   name: string;
@@ -657,7 +669,7 @@ function parseStarFormat(text: string): { situation?: string; task?: string; act
 /**
  * Render STAR format text with styled sections
  */
-function renderStarText(text: string): string {
+function renderStarText(text: string, bulletIndex: number): string {
   const star = parseStarFormat(text);
 
   if (!star) {
@@ -665,32 +677,68 @@ function renderStarText(text: string): string {
     return `<div style="color: #10b981; font-size: 14px; line-height: 1.5;">${escapeHtml(text)}</div>`;
   }
 
+  const isEditing = bulletEditMode.has(bulletIndex);
+  const edits = bulletEdits.get(bulletIndex) || {};
+  const context = bulletContext.get(bulletIndex) || '';
+  const expandedSections = expandedStarSections.get(bulletIndex) || new Set<string>();
+  const hasContext = context.trim().length > 0;
+  const hasEdits = Object.keys(edits).length > 0;
+  const hasChanges = hasContext || hasEdits;
+
+  const sections = [
+    { key: 'situation', label: 'Situation', value: edits.situation ?? star.situation, original: star.situation },
+    { key: 'task', label: 'Task', value: edits.task ?? star.task, original: star.task },
+    { key: 'action', label: 'Action', value: edits.action ?? star.action, original: star.action },
+    { key: 'result', label: 'Result', value: edits.result ?? star.result, original: star.result },
+  ].filter(s => s.value);
+
+  const truncate = (text: string | undefined, len: number) => {
+    if (!text) return '';
+    return text.length > len ? text.substring(0, len) + '...' : text;
+  };
+
   return `
-    <div class="star-format" style="font-size: 14px; line-height: 1.6;">
-      ${star.situation ? `
-        <div style="margin-bottom: 12px;">
-          <span style="color: #f59e0b; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Situation</span>
-          <div style="color: #d1d5db; margin-top: 4px;">${escapeHtml(star.situation)}</div>
-        </div>
-      ` : ''}
-      ${star.task ? `
-        <div style="margin-bottom: 12px;">
-          <span style="color: #3b82f6; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Task</span>
-          <div style="color: #d1d5db; margin-top: 4px;">${escapeHtml(star.task)}</div>
-        </div>
-      ` : ''}
-      ${star.action ? `
-        <div style="margin-bottom: 12px;">
-          <span style="color: #10b981; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Action</span>
-          <div style="color: #d1d5db; margin-top: 4px;">${escapeHtml(star.action)}</div>
-        </div>
-      ` : ''}
-      ${star.result ? `
-        <div>
-          <span style="color: #8b5cf6; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Result</span>
-          <div style="color: #9ca3af; margin-top: 4px; font-style: italic;">${escapeHtml(star.result)}</div>
-        </div>
-      ` : ''}
+    <div class="star-card" data-bullet-index="${bulletIndex}">
+      ${sections.map(section => {
+        const isExpanded = expandedSections.has(section.key);
+        const wasEdited = edits[section.key as keyof StarEdits] !== undefined;
+        return `
+          <div class="star-section ${isExpanded ? 'expanded' : ''}" data-section="${section.key}">
+            <div class="star-section-header" data-toggle-star-section="${bulletIndex}-${section.key}">
+              <span class="star-section-chevron">▶</span>
+              <span class="star-section-label ${section.key}">${section.label}</span>
+              ${!isExpanded ? `<span class="star-section-preview">${escapeHtml(truncate(section.value, 60))}</span>` : ''}
+              ${wasEdited ? '<span style="color: #f59e0b; font-size: 10px; margin-left: 8px;">edited</span>' : ''}
+            </div>
+            <div class="star-section-content">
+              ${isEditing ? `
+                <textarea class="star-section-textarea" data-edit-section="${bulletIndex}-${section.key}" rows="3">${escapeHtml(section.value || '')}</textarea>
+              ` : `
+                <div>${escapeHtml(section.value || '')}</div>
+              `}
+            </div>
+          </div>
+        `;
+      }).join('')}
+
+      <div class="star-context-container ${hasContext || isEditing ? 'visible' : ''}" id="context-${bulletIndex}">
+        <div class="star-context-label">Additional context for AI</div>
+        <textarea class="star-context-input" data-context="${bulletIndex}" placeholder="e.g., 'emphasize cost savings', 'this was a team of 5', 'resulted in 30% improvement'">${escapeHtml(context)}</textarea>
+      </div>
+
+      <div class="star-card-actions">
+        <button data-edit-bullet="${bulletIndex}" class="secondary" style="padding: 6px 12px; font-size: 12px;">
+          ${isEditing ? 'Done' : 'Edit'}
+        </button>
+        <button data-toggle-context="${bulletIndex}" class="secondary" style="padding: 6px 12px; font-size: 12px;">
+          ${hasContext ? 'Hide Context' : 'Add Context'}
+        </button>
+        ${hasChanges ? `
+          <button data-regenerate-bullet="${bulletIndex}" style="background: #f59e0b; color: #1a1a2e; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;">
+            Regenerate
+          </button>
+        ` : ''}
+      </div>
     </div>
   `;
 }
@@ -738,8 +786,8 @@ function renderGroupedBullets() {
               ${group.labels.length > 3 ? `<span style="color: #888; font-size: 11px; margin-left: 4px;">+${group.labels.length - 3} more</span>` : ''}
             </div>
           </div>
-          <div class="bullet-text" style="background: #1a1a1a; padding: 16px; border-radius: 6px; margin-bottom: 12px;">
-            ${renderStarText(group.text)}
+          <div class="bullet-text" style="margin-bottom: 12px;">
+            ${renderStarText(group.text, index)}
           </div>
           <div class="bullet-actions" style="display: flex; gap: 8px;">
             <button data-copy-group="${index}" style="background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Copy</button>
@@ -808,6 +856,112 @@ function renderGroupedBullets() {
   if (regenerateAllBtn) {
     regenerateAllBtn.addEventListener('click', handleRegenerateWithOverrides);
   }
+
+  // STAR card section toggles
+  groupedBulletsContainer.querySelectorAll('[data-toggle-star-section]').forEach(header => {
+    header.addEventListener('click', () => {
+      const [indexStr, sectionKey] = (header.getAttribute('data-toggle-star-section') || '').split('-');
+      const bulletIndex = parseInt(indexStr, 10);
+
+      if (!expandedStarSections.has(bulletIndex)) {
+        expandedStarSections.set(bulletIndex, new Set());
+      }
+      const sections = expandedStarSections.get(bulletIndex)!;
+
+      if (sections.has(sectionKey)) {
+        sections.delete(sectionKey);
+      } else {
+        sections.add(sectionKey);
+      }
+
+      renderGroupedBullets();
+    });
+  });
+
+  // Edit mode toggle
+  groupedBulletsContainer.querySelectorAll('[data-edit-bullet]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const bulletIndex = parseInt(btn.getAttribute('data-edit-bullet') || '0', 10);
+
+      if (bulletEditMode.has(bulletIndex)) {
+        // Exiting edit mode - save any textarea values
+        groupedBulletsContainer.querySelectorAll(`[data-edit-section^="${bulletIndex}-"]`).forEach(textarea => {
+          const [, sectionKey] = (textarea.getAttribute('data-edit-section') || '').split('-');
+          const value = (textarea as HTMLTextAreaElement).value;
+          const group = groupedBullets[bulletIndex];
+          const star = parseStarFormat(group?.text || '');
+          const original = star?.[sectionKey as keyof typeof star];
+
+          if (value !== original) {
+            if (!bulletEdits.has(bulletIndex)) {
+              bulletEdits.set(bulletIndex, {});
+            }
+            bulletEdits.get(bulletIndex)![sectionKey as keyof StarEdits] = value;
+          }
+        });
+        bulletEditMode.delete(bulletIndex);
+      } else {
+        // Entering edit mode - expand all sections
+        if (!expandedStarSections.has(bulletIndex)) {
+          expandedStarSections.set(bulletIndex, new Set());
+        }
+        const sections = expandedStarSections.get(bulletIndex)!;
+        sections.add('situation');
+        sections.add('task');
+        sections.add('action');
+        sections.add('result');
+        bulletEditMode.add(bulletIndex);
+      }
+
+      renderGroupedBullets();
+    });
+  });
+
+  // Context toggle
+  groupedBulletsContainer.querySelectorAll('[data-toggle-context]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const bulletIndex = parseInt(btn.getAttribute('data-toggle-context') || '0', 10);
+      const contextContainer = document.getElementById(`context-${bulletIndex}`);
+
+      if (contextContainer) {
+        const isVisible = contextContainer.classList.contains('visible');
+        if (isVisible) {
+          // Save context value before hiding
+          const textarea = contextContainer.querySelector('[data-context]') as HTMLTextAreaElement;
+          if (textarea && textarea.value.trim()) {
+            bulletContext.set(bulletIndex, textarea.value);
+          } else {
+            bulletContext.delete(bulletIndex);
+          }
+          contextContainer.classList.remove('visible');
+        } else {
+          contextContainer.classList.add('visible');
+        }
+        renderGroupedBullets();
+      }
+    });
+  });
+
+  // Context input blur - save on blur
+  groupedBulletsContainer.querySelectorAll('[data-context]').forEach(textarea => {
+    textarea.addEventListener('blur', () => {
+      const bulletIndex = parseInt(textarea.getAttribute('data-context') || '0', 10);
+      const value = (textarea as HTMLTextAreaElement).value;
+      if (value.trim()) {
+        bulletContext.set(bulletIndex, value);
+      } else {
+        bulletContext.delete(bulletIndex);
+      }
+    });
+  });
+
+  // Per-bullet regenerate (placeholder for now - will wire up fully in step 4)
+  groupedBulletsContainer.querySelectorAll('[data-regenerate-bullet]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const bulletIndex = parseInt(btn.getAttribute('data-regenerate-bullet') || '0', 10);
+      await handleRegenerateSingleBullet(bulletIndex);
+    });
+  });
 }
 
 async function handleRegenerateWithOverrides() {
@@ -845,6 +999,53 @@ async function handleRegenerateWithOverrides() {
 
   progressContainer.classList.add('hidden');
   generateBtn.disabled = false;
+}
+
+async function handleRegenerateSingleBullet(bulletIndex: number) {
+  if (!currentRepoPath) return;
+
+  const group = groupedBullets[bulletIndex];
+  if (!group) return;
+
+  const edits = bulletEdits.get(bulletIndex) || {};
+  const context = bulletContext.get(bulletIndex) || '';
+
+  // For now, regenerate just this group's commits
+  // Pass context via the overrides mechanism (we'll enhance the backend later)
+  const hashes = group.commits.map(c => c.hash);
+
+  // Show loading state
+  const card = groupedBulletsContainer.querySelector(`[data-bullet-index="${bulletIndex}"]`);
+  if (card) {
+    card.classList.add('loading');
+  }
+
+  try {
+    // TODO: Enhance backend to accept edits and context
+    // For now, just regenerate the group
+    const results = await window.commitkit.generateGroupedBullets(hashes, currentRepoPath) as GenerateGroupedBulletsResult;
+
+    if (Array.isArray(results) && results.length > 0) {
+      // Update just this bullet in our array
+      const newBullet = results.find(r => r.groupKey === group.groupKey) || results[0];
+      groupedBullets[bulletIndex] = newBullet;
+
+      // Clear edits and context for this bullet after regeneration
+      bulletEdits.delete(bulletIndex);
+      bulletContext.delete(bulletIndex);
+      bulletEditMode.delete(bulletIndex);
+
+      renderGroupedBullets();
+    } else if (isError(results)) {
+      alert(`Error regenerating: ${results.error}`);
+    }
+  } catch (error) {
+    alert(`Error: ${error}`);
+  }
+
+  if (card) {
+    card.classList.remove('loading');
+  }
 }
 
 // Global functions kept for backwards compatibility (CSP-safe event listeners are now used)
