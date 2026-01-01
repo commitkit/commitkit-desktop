@@ -1030,10 +1030,21 @@
           </div>
         </div>
         <div class="graph-info">
-          <span id="graphInfo">Click nodes to explore • Shift+click to multi-select</span>
+          <span id="graphInfo">Click a topic to see commits • Shift+click to multi-select</span>
         </div>
         <div class="graph-selection-info" id="graphSelectionInfo">
           <span id="graphSelectedCount">0</span> commits selected
+        </div>
+      </div>
+
+      <!-- Selected commits panel (shown when commits are selected in graph) -->
+      <div id="graphSelectedPanel" class="hidden" style="background: #16213e; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h3 id="graphPanelTitle" style="color: #f0f0f0; margin: 0; font-size: 16px;">Selected Commits</h3>
+          <button id="clearGraphSelection" class="secondary" style="padding: 4px 10px; font-size: 12px;">Clear Selection</button>
+        </div>
+        <div id="graphSelectedCommits" style="max-height: 200px; overflow-y: auto;">
+          <!-- Selected commits will be listed here -->
         </div>
       </div>
 

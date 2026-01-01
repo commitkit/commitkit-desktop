@@ -11,7 +11,7 @@ import { GitHubPlugin } from '../integrations/github';
 import { JiraPlugin } from '../integrations/jira';
 import { OllamaProvider } from '../services/ollama';
 import { getConfig, updateConfig, AppConfig, getSavedRepos, addRepo, removeRepo, updateRepoSettings, getRepoSettings } from '../services/config';
-import { Commit, EnrichmentContext, JiraIssue, CommitGroup, ClusteringSensitivity } from '../types';
+import { Commit, EnrichmentContext, JiraIssue } from '../types';
 import { groupCommitsByFeature } from '../utils/grouping';
 
 // Set app name for macOS menu bar
@@ -442,9 +442,9 @@ ipcMain.handle('generate-grouped-bullets', async (_event, commitHashes: string[]
       }
     }
 
-    // Group commits by epic (hybrid approach), respecting user overrides
-    const { groups: jiraGroups, ungroupedCommits } = groupCommitsByFeature(selectedCommits, jiraCache, groupOverrides);
-    console.log('[GROUPED] Created JIRA groups:', jiraGroups.map(g => ({
+    // Group commits by epic (JIRA-based), respecting user overrides
+    const { groups, ungroupedCommits } = groupCommitsByFeature(selectedCommits, jiraCache, groupOverrides);
+    console.log('[GROUPED] Created JIRA groups:', groups.map(g => ({
       key: g.groupKey,
       name: g.groupName,
       commits: g.commits.length,
@@ -452,94 +452,7 @@ ipcMain.handle('generate-grouped-bullets', async (_event, commitHashes: string[]
     })));
     console.log('[GROUPED] Ungrouped commits (no epic):', ungroupedCommits.length);
 
-    // AI-powered clustering for ungrouped commits
-    const aiGroups: CommitGroup[] = [];
-    let remainingUngrouped = ungroupedCommits;
-
-    if (ungroupedCommits.length > 1) {
-      if (mainWindow) {
-        mainWindow.webContents.send('generation-progress', {
-          current: 0,
-          total: 100,
-          message: `Analyzing ${ungroupedCommits.length} commits for intelligent grouping...`,
-        });
-      }
-
-      try {
-        const git = new GitPlugin(repoPath);
-        const sensitivity = (config.ollama?.clusteringSensitivity as ClusteringSensitivity) || 'balanced';
-
-        // Fetch diffs for ungrouped commits (with concurrency limit)
-        const commitsWithDiffs: Array<{
-          hash: string;
-          message: string;
-          filesChanged: string[];
-          diffSample: string;
-        }> = [];
-
-        for (const { commit } of ungroupedCommits) {
-          const filesChanged = await git.getFilesChanged(commit.hash);
-          const diffSample = await git.getDiffSampled(commit.hash);
-          commitsWithDiffs.push({
-            hash: commit.hash,
-            message: commit.message,
-            filesChanged,
-            diffSample,
-          });
-        }
-
-        // Get AI clustering suggestions
-        const clustering = await ollama.analyzeCommitsForGrouping(commitsWithDiffs, sensitivity);
-        console.log('[GROUPED] AI clustering result:', {
-          groups: clustering.groups.length,
-          ungrouped: clustering.ungrouped.length,
-        });
-
-        // Convert AI suggestions to CommitGroup format
-        for (const aiGroup of clustering.groups) {
-          console.log('[GROUPED] Processing AI group:', aiGroup.name, 'with', aiGroup.commitHashes.length, 'commits');
-
-          // The Ollama service now returns actual hashes (converted from indices)
-          const groupCommits = aiGroup.commitHashes
-            .map(hash => ungroupedCommits.find(u => u.commit.hash === hash))
-            .filter((u): u is { commit: Commit; issues: JiraIssue[] } => u !== undefined);
-
-          console.log('[GROUPED] Matched commits:', groupCommits.length);
-
-          if (groupCommits.length >= 2) {
-            aiGroups.push({
-              groupKey: `ai-${aiGroup.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-              groupType: 'ai-suggested',
-              groupName: aiGroup.name,
-              commits: groupCommits.map(g => g.commit),
-              jiraIssues: groupCommits.flatMap(g => g.issues),
-              labels: [aiGroup.theme],
-              reasoning: aiGroup.reasoning,
-              confidence: aiGroup.confidence,
-            });
-          }
-        }
-
-        // Update remaining ungrouped commits
-        const groupedHashes = new Set(aiGroups.flatMap(g => g.commits.map(c => c.hash)));
-        remainingUngrouped = ungroupedCommits.filter(u => !groupedHashes.has(u.commit.hash));
-
-        console.log('[GROUPED] AI groups created:', aiGroups.map(g => ({
-          key: g.groupKey,
-          name: g.groupName,
-          commits: g.commits.length,
-          confidence: g.confidence,
-        })));
-        console.log('[GROUPED] Remaining ungrouped:', remainingUngrouped.length);
-      } catch (error) {
-        console.error('[GROUPED] AI clustering failed:', error);
-        // Continue with all commits as ungrouped
-      }
-    }
-
-    // Combine all groups
-    const groups = [...jiraGroups, ...aiGroups];
-    const totalItems = groups.length + remainingUngrouped.length;
+    const totalItems = groups.length + ungroupedCommits.length;
 
     // Generate a bullet for each group
     const results: Array<{
@@ -553,8 +466,6 @@ ipcMain.handle('generate-grouped-bullets', async (_event, commitHashes: string[]
       commits: Array<{ hash: string; message: string }>;
       labels: string[];
       sprint?: string;
-      reasoning?: string;
-      confidence?: number;
     }> = [];
 
     // Generate grouped bullets for epic-based groups
@@ -582,14 +493,12 @@ ipcMain.handle('generate-grouped-bullets', async (_event, commitHashes: string[]
         commits: group.commits.map(c => ({ hash: c.hash, message: c.message.split('\n')[0] })),
         labels: group.labels,
         sprint: group.sprint,
-        reasoning: group.reasoning,
-        confidence: group.confidence,
       });
     }
 
-    // Generate individual bullets for remaining ungrouped commits
-    for (let i = 0; i < remainingUngrouped.length; i++) {
-      const { commit, issues } = remainingUngrouped[i];
+    // Generate individual bullets for ungrouped commits
+    for (let i = 0; i < ungroupedCommits.length; i++) {
+      const { commit, issues } = ungroupedCommits[i];
 
       if (mainWindow) {
         mainWindow.webContents.send('generation-progress', {

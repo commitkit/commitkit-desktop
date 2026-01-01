@@ -91,6 +91,7 @@ let taggedCommits: TaggedCommit[] = [];
 let graphNetwork: any = null;
 let graphSelectedNodes: Set<string> = new Set();
 let isTagging = false;
+let selectedTagName: string | null = null;
 
 // Topic tag colors (matching the tag taxonomy)
 const TAG_COLORS: Record<string, string> = {
@@ -176,6 +177,10 @@ const graphSelectionInfo = document.getElementById('graphSelectionInfo') as HTML
 const graphSelectedCount = document.getElementById('graphSelectedCount') as HTMLElement;
 const listViewContainer = document.getElementById('listViewContainer') as HTMLElement;
 const viewToggleBtns = document.querySelectorAll('.view-toggle-btn');
+const graphSelectedPanel = document.getElementById('graphSelectedPanel') as HTMLElement;
+const graphPanelTitle = document.getElementById('graphPanelTitle') as HTMLElement;
+const graphSelectedCommitsList = document.getElementById('graphSelectedCommits') as HTMLElement;
+const clearGraphSelectionBtn = document.getElementById('clearGraphSelection') as HTMLButtonElement;
 
 // Initialize
 async function init() {
@@ -246,6 +251,18 @@ async function init() {
       switchView(view);
     });
   });
+
+  // Clear graph selection button
+  if (clearGraphSelectionBtn) {
+    clearGraphSelectionBtn.addEventListener('click', () => {
+      graphSelectedNodes.clear();
+      selectedCommits.clear();
+      selectedTagName = null;
+      updateGraphSelection();
+      updateSelectionCount();
+      renderGraph();
+    });
+  }
 }
 
 async function loadSavedRepos() {
@@ -692,9 +709,9 @@ async function generateGroupedBulletsAction() {
   if (Array.isArray(results)) {
     groupedBullets = results;
 
-    // Extract available groups from epic and AI-suggested results
+    // Extract available groups from epic results
     availableGroups = results
-      .filter(g => g.groupType === 'epic' || g.groupType === 'ai-suggested')
+      .filter(g => g.groupType === 'epic')
       .map(g => ({ key: g.groupKey, name: g.groupName }));
 
     // Clear any user overrides from previous sessions
@@ -827,14 +844,10 @@ function renderGroupedBullets() {
   groupedBulletsContainer.classList.remove('hidden');
   // Separate groups by type
   const epicGroups = groupedBullets.filter(g => g.groupType === 'epic');
-  const aiGroups = groupedBullets.filter(g => g.groupType === 'ai-suggested');
   const individualBullets = groupedBullets.filter(g => g.groupType === 'individual');
 
   // Check if any overrides exist
   const hasOverrides = commitGroupOverrides.size > 0;
-
-  // Helper to format confidence as percentage
-  const formatConfidence = (conf: number | undefined) => conf !== undefined ? `${Math.round(conf * 100)}%` : '';
 
   groupedBulletsContainer.innerHTML = `
     ${epicGroups.length > 0 ? `
@@ -882,56 +895,10 @@ function renderGroupedBullets() {
       `).join('')}
     ` : ''}
 
-    ${aiGroups.length > 0 ? `
-      <h3 style="margin: 24px 0 16px 0; color: #f0f0f0;">AI-Suggested Groups (${aiGroups.length} clusters) - STAR Format</h3>
-      <p style="color: #9ca3af; font-size: 12px; margin: -8px 0 16px 0;">Commits grouped by AI analysis of code changes and commit messages</p>
-      ${aiGroups.map((group, i) => {
-        const index = epicGroups.length + i;
-        return `
-        <div class="grouped-bullet-item" style="background: #2a2a2a; border-radius: 8px; padding: 16px; margin-bottom: 12px; border-left: 3px solid #14b8a6;">
-          <div class="group-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-            <div>
-              <span class="group-name" style="font-weight: 600; color: #f0f0f0; font-size: 14px;">${escapeHtml(group.groupName)}</span>
-              <span class="group-meta" style="color: #888; font-size: 12px; margin-left: 8px;">
-                ${group.commitCount} commits · AI Cluster
-                ${group.confidence !== undefined ? `· ${formatConfidence(group.confidence)} confidence` : ''}
-              </span>
-            </div>
-            <div class="group-badges">
-              <span class="badge" style="background: #14b8a6; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">AI</span>
-              ${group.labels.slice(0, 2).map(label =>
-                `<span class="badge" style="background: #6b7280; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 4px;">${escapeHtml(label)}</span>`
-              ).join('')}
-            </div>
-          </div>
-          ${group.reasoning ? `
-            <div class="ai-reasoning" style="background: #1f2937; border-radius: 4px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px; color: #9ca3af; border-left: 2px solid #14b8a6;">
-              <span style="color: #14b8a6; font-weight: 500;">AI Reasoning:</span> ${escapeHtml(group.reasoning)}
-            </div>
-          ` : ''}
-          <div class="bullet-text" style="margin-bottom: 12px;">
-            ${renderStarText(group.text, index)}
-          </div>
-          <div class="bullet-actions" style="display: flex; gap: 8px;">
-            <button data-copy-group="${index}" style="background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Copy</button>
-            <button data-toggle-group="${index}" class="secondary" style="background: #374151; color: #d1d5db; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Show Commits (${group.commitCount})</button>
-          </div>
-          <div id="group-commits-${index}" class="group-commits hidden" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #374151;">
-            ${group.commits.map(c => `
-              <div style="font-size: 12px; color: #9ca3af; padding: 4px 0; display: flex;">
-                <span style="font-family: monospace; color: #6b7280; min-width: 70px;">${c.hash.substring(0, 7)}</span>
-                <span style="color: #d1d5db;">${escapeHtml(c.message.substring(0, 80))}${c.message.length > 80 ? '...' : ''}</span>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      `}).join('')}
-    ` : ''}
-
     ${individualBullets.length > 0 ? `
       <h3 style="margin: 24px 0 16px 0; color: #f0f0f0;">Individual Bullets (${individualBullets.length} ungrouped commits)</h3>
       ${individualBullets.map((group, i) => {
-        const index = epicGroups.length + aiGroups.length + i;
+        const index = epicGroups.length + i;
         return `
         <div class="grouped-bullet-item" style="background: #252525; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px;">
           <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
@@ -1606,6 +1573,10 @@ function handleGraphTagClick(tag: string, isShiftKey: boolean) {
     // Clear previous selection
     graphSelectedNodes.clear();
     selectedCommits.clear();
+    selectedTagName = tag;
+  } else {
+    // Multi-select mode - append tag name
+    selectedTagName = selectedTagName ? `${selectedTagName} + ${tag}` : tag;
   }
 
   // Add all commits with this tag
@@ -1620,7 +1591,7 @@ function handleGraphTagClick(tag: string, isShiftKey: boolean) {
 }
 
 /**
- * Update the graph selection info display
+ * Update the graph selection info display and show selected commits panel
  */
 function updateGraphSelection() {
   const count = graphSelectedNodes.size;
@@ -1628,8 +1599,46 @@ function updateGraphSelection() {
   if (count > 0) {
     graphSelectionInfo.classList.add('visible');
     graphSelectedCount.textContent = String(count);
+
+    // Show the selected commits panel
+    graphSelectedPanel.classList.remove('hidden');
+
+    // Update panel title
+    if (selectedTagName) {
+      graphPanelTitle.textContent = `${selectedTagName} (${count} commits)`;
+    } else {
+      graphPanelTitle.textContent = `Selected Commits (${count})`;
+    }
+
+    // Populate the commits list
+    const selectedHashes = Array.from(graphSelectedNodes);
+    graphSelectedCommitsList.innerHTML = selectedHashes.map(hash => {
+      const commit = commits.find(c => c.hash === hash);
+      const tagged = taggedCommits.find(tc => tc.hash === hash);
+      if (!commit) return '';
+
+      const shortMessage = commit.message.split('\n')[0].substring(0, 60);
+      const tagsHtml = tagged?.tags.map(tag =>
+        `<span style="background: ${TAG_COLORS[tag] || '#6b7280'}; color: white; padding: 1px 6px; border-radius: 3px; font-size: 10px; margin-left: 4px;">${tag}</span>`
+      ).join('') || '';
+
+      return `
+        <div style="display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid #333;">
+          <span style="font-family: monospace; color: #6b7280; font-size: 12px; flex-shrink: 0;">${hash.substring(0, 7)}</span>
+          <div style="flex: 1; min-width: 0;">
+            <div style="color: #d1d5db; font-size: 13px; margin-bottom: 4px;">${escapeHtml(shortMessage)}${commit.message.split('\n')[0].length > 60 ? '...' : ''}</div>
+            <div style="display: flex; align-items: center; flex-wrap: wrap;">
+              <span style="color: #888; font-size: 11px;">${commit.author} · ${formatDate(commit.timestamp)}</span>
+              ${tagsHtml}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
   } else {
     graphSelectionInfo.classList.remove('visible');
+    graphSelectedPanel.classList.add('hidden');
+    selectedTagName = null;
   }
 }
 
