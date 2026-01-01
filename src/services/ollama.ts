@@ -6,7 +6,7 @@
  */
 
 import { Ollama } from 'ollama';
-import { AIProvider, Commit, EnrichmentContext, CVBullet, JiraIssue, GitHubPR, CommitGroup, GroupedBullet } from '../types';
+import { AIProvider, Commit, EnrichmentContext, CVBullet, JiraIssue, GitHubPR, CommitGroup, GroupedBullet, ClusteringSensitivity, ClusteringResult } from '../types';
 
 export interface OllamaConfig {
   host?: string;        // Default: http://localhost:11434
@@ -356,5 +356,167 @@ EXAMPLE OUTPUT:
 Generate the STAR format summary now:`);
 
     return parts.join('\n');
+  }
+
+  /**
+   * Confidence thresholds by sensitivity level
+   */
+  private getConfidenceThresholds(sensitivity: ClusteringSensitivity): { perCommit: number; perGroup: number } {
+    switch (sensitivity) {
+      case 'strict':
+        return { perCommit: 0.9, perGroup: 0.85 };
+      case 'balanced':
+        return { perCommit: 0.8, perGroup: 0.7 };
+      case 'loose':
+        return { perCommit: 0.6, perGroup: 0.5 };
+    }
+  }
+
+  /**
+   * Build prompt for commit clustering analysis
+   */
+  buildClusteringPrompt(commits: Array<{
+    hash: string;
+    message: string;
+    filesChanged: string[];
+    diffSample: string;
+  }>): string {
+    const commitDescriptions = commits.map((c, i) => {
+      const shortHash = c.hash.substring(0, 7);
+      const firstLine = c.message.split('\n')[0];
+      const files = c.filesChanged.length > 0
+        ? `Files: ${c.filesChanged.slice(0, 5).join(', ')}${c.filesChanged.length > 5 ? ` (+${c.filesChanged.length - 5} more)` : ''}`
+        : 'Files: (none)';
+      const diff = c.diffSample
+        ? `\n   Changes:\n   \`\`\`diff\n${c.diffSample.split('\n').slice(0, 20).join('\n')}\n   \`\`\``
+        : '';
+
+      return `${i + 1}. [${shortHash}] ${firstLine}
+   ${files}${diff}`;
+    }).join('\n\n');
+
+    return `Analyze these git commits and group them by feature, component, or logical change.
+
+COMMITS:
+${commitDescriptions}
+
+OUTPUT FORMAT - Respond with ONLY valid JSON, no other text:
+{
+  "groups": [
+    {
+      "name": "Short descriptive name (2-5 words)",
+      "theme": "authentication|api|ui|testing|refactor|bugfix|docs|config|other",
+      "commits": [
+        {"hash": "abc1234", "confidence": 0.95},
+        {"hash": "def5678", "confidence": 0.82}
+      ],
+      "overall_confidence": 0.88,
+      "reasoning": "Brief explanation (1 sentence)"
+    }
+  ],
+  "ungrouped": ["hash1", "hash2"]
+}
+
+CONFIDENCE SCORING (0.0 to 1.0):
+- 0.9+ = Very confident - commits clearly belong together (same feature, same files)
+- 0.8-0.9 = Confident - strong connection (related functionality, similar patterns)
+- 0.7-0.8 = Moderate - some connection but not certain
+- Below 0.7 = Low confidence - leave in ungrouped
+
+RULES:
+1. Group by logical feature or component, not just file path
+2. Minimum 2 commits per group (otherwise leave ungrouped)
+3. Use clear, CV-friendly group names (e.g., "User Authentication", "API Error Handling")
+4. Be CONSERVATIVE with confidence scores - when in doubt, score lower
+5. Consider: shared files, related functionality, sequential work on same feature
+6. overall_confidence = average of commit confidences in that group
+
+Respond with only the JSON:`;
+  }
+
+  /**
+   * Analyze commits for intelligent grouping using LLM
+   */
+  async analyzeCommitsForGrouping(
+    commits: Array<{
+      hash: string;
+      message: string;
+      filesChanged: string[];
+      diffSample: string;
+    }>,
+    sensitivity: ClusteringSensitivity = 'balanced'
+  ): Promise<ClusteringResult> {
+    // Skip if too few commits
+    if (commits.length < 2) {
+      return { groups: [], ungrouped: commits.map(c => c.hash) };
+    }
+
+    const prompt = this.buildClusteringPrompt(commits);
+
+    try {
+      const response = await this.generateText(prompt);
+
+      // Parse JSON from response (handle potential markdown code blocks)
+      let jsonStr = response;
+      if (response.includes('```json')) {
+        jsonStr = response.split('```json')[1]?.split('```')[0] || response;
+      } else if (response.includes('```')) {
+        jsonStr = response.split('```')[1]?.split('```')[0] || response;
+      }
+
+      const parsed = JSON.parse(jsonStr.trim()) as {
+        groups: Array<{
+          name: string;
+          theme: string;
+          commits: Array<{ hash: string; confidence: number }>;
+          overall_confidence: number;
+          reasoning: string;
+        }>;
+        ungrouped: string[];
+      };
+
+      // Apply confidence filtering
+      const thresholds = this.getConfidenceThresholds(sensitivity);
+      const filteredGroups: ClusteringResult['groups'] = [];
+      const allUngrouped: string[] = [...(parsed.ungrouped || [])];
+
+      for (const group of parsed.groups) {
+        // Filter commits by per-commit confidence threshold
+        const confidentCommits = group.commits.filter(c => c.confidence >= thresholds.perCommit);
+        const lowConfidenceCommits = group.commits.filter(c => c.confidence < thresholds.perCommit);
+
+        // Move low-confidence commits to ungrouped
+        allUngrouped.push(...lowConfidenceCommits.map(c => c.hash));
+
+        // Check if group meets per-group threshold and has enough commits
+        if (group.overall_confidence >= thresholds.perGroup && confidentCommits.length >= 2) {
+          filteredGroups.push({
+            name: group.name,
+            theme: group.theme,
+            commitHashes: confidentCommits.map(c => c.hash),
+            reasoning: group.reasoning,
+            confidence: group.overall_confidence,
+          });
+        } else {
+          // Dissolve group - move all commits to ungrouped
+          allUngrouped.push(...confidentCommits.map(c => c.hash));
+        }
+      }
+
+      // Deduplicate ungrouped (in case of duplicates)
+      const uniqueUngrouped = [...new Set(allUngrouped)];
+
+      return {
+        groups: filteredGroups,
+        ungrouped: uniqueUngrouped,
+      };
+    } catch (error) {
+      console.error('Failed to analyze commits for grouping:', error);
+      // Fallback: all commits ungrouped
+      return {
+        groups: [],
+        ungrouped: commits.map(c => c.hash),
+      };
+    }
   }
 }

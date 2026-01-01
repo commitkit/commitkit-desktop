@@ -33,6 +33,7 @@ export interface AppConfig {
   ollama?: {
     host: string;
     model: string;
+    clusteringSensitivity?: 'strict' | 'balanced' | 'loose';
   };
 }
 

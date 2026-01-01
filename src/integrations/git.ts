@@ -113,6 +113,131 @@ export class GitPlugin implements Plugin {
   }
 
   /**
+   * Get full diff for a commit
+   */
+  async getDiff(commitHash: string): Promise<string> {
+    try {
+      return await this.git.diff([`${commitHash}^`, commitHash]);
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Get diff with smart sampling (per-file chunks)
+   * Ensures every file is represented while keeping total size bounded
+   */
+  async getDiffSampled(
+    commitHash: string,
+    options: {
+      maxLinesPerFile?: number;
+      maxTotalLines?: number;
+      chunkSize?: number;
+    } = {}
+  ): Promise<string> {
+    const {
+      maxLinesPerFile = 30,
+      maxTotalLines = 100,
+      chunkSize = 10,
+    } = options;
+
+    try {
+      const fullDiff = await this.getDiff(commitHash);
+      if (!fullDiff) return '';
+
+      // Split diff by file (each file starts with "diff --git")
+      const fileDiffs = fullDiff.split(/(?=^diff --git)/m).filter(d => d.trim());
+
+      if (fileDiffs.length === 0) return '';
+
+      // Calculate lines budget per file
+      const linesPerFile = Math.min(
+        maxLinesPerFile,
+        Math.floor(maxTotalLines / fileDiffs.length)
+      );
+
+      const sampledParts: string[] = [];
+      let totalLines = 0;
+
+      for (const fileDiff of fileDiffs) {
+        if (totalLines >= maxTotalLines) break;
+
+        const lines = fileDiff.split('\n');
+
+        // Extract file header (diff --git line and any @@ markers)
+        const headerLines: string[] = [];
+        const contentLines: string[] = [];
+
+        for (const line of lines) {
+          if (
+            line.startsWith('diff --git') ||
+            line.startsWith('index ') ||
+            line.startsWith('---') ||
+            line.startsWith('+++') ||
+            line.startsWith('@@')
+          ) {
+            headerLines.push(line);
+          } else {
+            contentLines.push(line);
+          }
+        }
+
+        // Sample content lines using chunk strategy
+        const sampled = this.sampleLines(contentLines, linesPerFile, chunkSize);
+        const sampledWithHeader = [...headerLines, ...sampled].join('\n');
+
+        sampledParts.push(sampledWithHeader);
+        totalLines += headerLines.length + sampled.length;
+      }
+
+      return sampledParts.join('\n\n');
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Sample lines from content using first/middle/last chunk strategy
+   */
+  private sampleLines(lines: string[], maxLines: number, chunkSize: number): string[] {
+    if (lines.length <= maxLines) {
+      return lines;
+    }
+
+    const result: string[] = [];
+
+    // First chunk
+    const firstChunk = lines.slice(0, chunkSize);
+    result.push(...firstChunk);
+
+    // If we have room for more and there's content between first and last
+    const remaining = maxLines - chunkSize * 2; // Reserve space for last chunk
+    if (remaining > 0 && lines.length > chunkSize * 2) {
+      // Pick a random middle chunk
+      const middleStart = chunkSize;
+      const middleEnd = lines.length - chunkSize;
+      const middleRange = middleEnd - middleStart;
+
+      if (middleRange > 0) {
+        // Random position in middle section
+        const randomStart = middleStart + Math.floor(Math.random() * Math.max(1, middleRange - chunkSize));
+        const middleChunk = lines.slice(randomStart, randomStart + Math.min(chunkSize, remaining));
+        result.push('... [sampled] ...');
+        result.push(...middleChunk);
+      }
+    }
+
+    // Last chunk
+    if (lines.length > chunkSize) {
+      result.push('... [sampled] ...');
+      const lastChunk = lines.slice(-chunkSize);
+      result.push(...lastChunk);
+    }
+
+    return result;
+  }
+
+  /**
    * Get unique authors from the branch
    */
   async getAuthors(): Promise<Array<{ name: string; email: string }>> {

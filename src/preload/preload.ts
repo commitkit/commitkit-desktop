@@ -70,7 +70,7 @@ export interface CommitKitAPI {
   generateGroupedBullets: (commitHashes: string[], repoPath: string, groupOverrides?: Record<string, string | null>) => Promise<GroupedBulletData[]>;
   checkOllamaStatus: () => Promise<{ connected: boolean; model?: string; error?: string }>;
   getOllamaModels: () => Promise<{ installed: string[]; recommended: Array<{ name: string; description: string }>; current: string; error?: string }>;
-  getConfig: () => Promise<{ github?: { token: string }; jira?: { baseUrl: string; email: string; apiToken: string }; ollama?: { host?: string; model?: string } }>;
+  getConfig: () => Promise<{ github?: { token: string }; jira?: { baseUrl: string; email: string; apiToken: string }; ollama?: { host?: string; model?: string; clusteringSensitivity?: 'strict' | 'balanced' | 'loose' } }>;
   saveConfig: (config: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>;
   testGitHub: (token: string) => Promise<{ success: boolean; error?: string }>;
   testJira: (config: { baseUrl: string; email: string; apiToken: string }) => Promise<{ success: boolean; error?: string }>;
@@ -102,6 +102,8 @@ export interface GroupedBulletData {
   commits: Array<{ hash: string; message: string }>;
   labels: string[];
   sprint?: string;
+  reasoning?: string;  // AI explanation for grouping (ai-suggested only)
+  confidence?: number; // AI confidence score 0-1 (ai-suggested only)
 }
 
 declare global {

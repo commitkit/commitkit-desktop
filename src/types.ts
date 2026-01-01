@@ -101,12 +101,29 @@ export interface CVBullet {
 // Grouped commits for consolidated bullet generation
 export interface CommitGroup {
   groupKey: string;           // e.g., "ES1-1234" (epic) or commit hash
-  groupType: 'epic' | 'individual';
+  groupType: 'epic' | 'individual' | 'ai-suggested';
   groupName: string;          // e.g., "AI Assistant Feature" or ticket summary
   commits: Commit[];
   jiraIssues: JiraIssue[];    // All unique JIRA issues in this group
   sprint?: string;            // Most common sprint in the group
   labels: string[];           // All unique labels across the group
+  reasoning?: string;         // AI explanation for grouping (ai-suggested only)
+  confidence?: number;        // AI confidence score 0-1 (ai-suggested only)
+}
+
+// Clustering sensitivity options
+export type ClusteringSensitivity = 'strict' | 'balanced' | 'loose';
+
+// Clustering analysis result from LLM
+export interface ClusteringResult {
+  groups: Array<{
+    name: string;
+    theme: string;
+    commitHashes: string[];
+    reasoning: string;
+    confidence: number;
+  }>;
+  ungrouped: string[];
 }
 
 // Grouped bullet output

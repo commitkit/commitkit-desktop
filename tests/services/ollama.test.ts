@@ -232,4 +232,264 @@ describe('OllamaProvider', () => {
       expect(results[1].commit.hash).toBe('def456');
     });
   });
+
+  describe('buildClusteringPrompt', () => {
+    it('should include all commit data in prompt', () => {
+      const commits = [
+        {
+          hash: 'abc123',
+          message: 'Add user login',
+          filesChanged: ['src/auth/login.ts', 'src/auth/session.ts'],
+          diffSample: '+export function login() {}',
+        },
+        {
+          hash: 'def456',
+          message: 'Add user logout',
+          filesChanged: ['src/auth/logout.ts'],
+          diffSample: '+export function logout() {}',
+        },
+      ];
+
+      const prompt = provider.buildClusteringPrompt(commits);
+
+      // Should contain commit hashes
+      expect(prompt).toContain('abc123');
+      expect(prompt).toContain('def456');
+
+      // Should contain commit messages
+      expect(prompt).toContain('Add user login');
+      expect(prompt).toContain('Add user logout');
+
+      // Should contain file paths
+      expect(prompt).toContain('src/auth/login.ts');
+      expect(prompt).toContain('src/auth/logout.ts');
+
+      // Should contain diff samples
+      expect(prompt).toContain('+export function login()');
+      expect(prompt).toContain('+export function logout()');
+
+      // Should contain JSON structure guidance
+      expect(prompt).toContain('groups');
+      expect(prompt).toContain('ungrouped');
+      expect(prompt).toContain('confidence');
+    });
+
+    it('should handle empty commits array', () => {
+      const prompt = provider.buildClusteringPrompt([]);
+      expect(prompt).toContain('COMMITS:');
+    });
+  });
+
+  describe('analyzeCommitsForGrouping', () => {
+    it('should parse valid JSON response and return groups', async () => {
+      // Mock the generate function to return a valid clustering result
+      const mockOllama = require('ollama');
+      mockOllama.Ollama.mockImplementation(() => ({
+        generate: jest.fn().mockResolvedValue({
+          response: JSON.stringify({
+            groups: [
+              {
+                name: 'Authentication Feature',
+                theme: 'authentication',
+                commits: [
+                  { hash: 'abc123', confidence: 0.95 },
+                  { hash: 'def456', confidence: 0.88 },
+                ],
+                overall_confidence: 0.91,
+                reasoning: 'Both commits relate to user auth',
+              },
+            ],
+            ungrouped: ['ghi789'],
+          }),
+        }),
+        list: jest.fn().mockResolvedValue({ models: [{ name: 'qwen2.5:14b' }] }),
+      }));
+
+      const newProvider = new OllamaProvider();
+      const commits = [
+        { hash: 'abc123', message: 'Add login', filesChanged: [], diffSample: '' },
+        { hash: 'def456', message: 'Add logout', filesChanged: [], diffSample: '' },
+        { hash: 'ghi789', message: 'Update readme', filesChanged: [], diffSample: '' },
+      ];
+
+      const result = await newProvider.analyzeCommitsForGrouping(commits, 'balanced');
+
+      expect(result.groups).toHaveLength(1);
+      expect(result.groups[0].name).toBe('Authentication Feature');
+      expect(result.groups[0].commitHashes).toContain('abc123');
+      expect(result.groups[0].commitHashes).toContain('def456');
+      expect(result.ungrouped).toContain('ghi789');
+    });
+
+    it('should filter low-confidence commits in strict mode', async () => {
+      const mockOllama = require('ollama');
+      mockOllama.Ollama.mockImplementation(() => ({
+        generate: jest.fn().mockResolvedValue({
+          response: JSON.stringify({
+            groups: [
+              {
+                name: 'Auth Feature',
+                theme: 'auth',
+                commits: [
+                  { hash: 'abc123', confidence: 0.95 },  // High - should stay
+                  { hash: 'def456', confidence: 0.75 },  // Below 0.9 - should be removed in strict
+                ],
+                overall_confidence: 0.85,
+                reasoning: 'Auth related',
+              },
+            ],
+            ungrouped: [],
+          }),
+        }),
+        list: jest.fn().mockResolvedValue({ models: [{ name: 'qwen2.5:14b' }] }),
+      }));
+
+      const newProvider = new OllamaProvider();
+      const commits = [
+        { hash: 'abc123', message: 'Add login', filesChanged: [], diffSample: '' },
+        { hash: 'def456', message: 'Fix typo', filesChanged: [], diffSample: '' },
+      ];
+
+      const result = await newProvider.analyzeCommitsForGrouping(commits, 'strict');
+
+      // In strict mode (0.9 threshold), def456 should be filtered out
+      // Group should be dissolved since it has < 2 commits after filtering
+      expect(result.groups).toHaveLength(0);
+      expect(result.ungrouped).toContain('abc123');
+      expect(result.ungrouped).toContain('def456');
+    });
+
+    it('should keep groups with high confidence in strict mode', async () => {
+      const mockOllama = require('ollama');
+      mockOllama.Ollama.mockImplementation(() => ({
+        generate: jest.fn().mockResolvedValue({
+          response: JSON.stringify({
+            groups: [
+              {
+                name: 'Auth Feature',
+                theme: 'auth',
+                commits: [
+                  { hash: 'abc123', confidence: 0.95 },
+                  { hash: 'def456', confidence: 0.92 },
+                ],
+                overall_confidence: 0.93,
+                reasoning: 'Auth related',
+              },
+            ],
+            ungrouped: [],
+          }),
+        }),
+        list: jest.fn().mockResolvedValue({ models: [{ name: 'qwen2.5:14b' }] }),
+      }));
+
+      const newProvider = new OllamaProvider();
+      const commits = [
+        { hash: 'abc123', message: 'Add login', filesChanged: [], diffSample: '' },
+        { hash: 'def456', message: 'Add logout', filesChanged: [], diffSample: '' },
+      ];
+
+      const result = await newProvider.analyzeCommitsForGrouping(commits, 'strict');
+
+      // Both commits are above 0.9 threshold, group should remain
+      expect(result.groups).toHaveLength(1);
+      expect(result.groups[0].commitHashes).toHaveLength(2);
+    });
+
+    it('should be more permissive in loose mode', async () => {
+      const mockOllama = require('ollama');
+      mockOllama.Ollama.mockImplementation(() => ({
+        generate: jest.fn().mockResolvedValue({
+          response: JSON.stringify({
+            groups: [
+              {
+                name: 'Misc Feature',
+                theme: 'misc',
+                commits: [
+                  { hash: 'abc123', confidence: 0.65 },
+                  { hash: 'def456', confidence: 0.62 },
+                ],
+                overall_confidence: 0.63,
+                reasoning: 'Loosely related',
+              },
+            ],
+            ungrouped: [],
+          }),
+        }),
+        list: jest.fn().mockResolvedValue({ models: [{ name: 'qwen2.5:14b' }] }),
+      }));
+
+      const newProvider = new OllamaProvider();
+      const commits = [
+        { hash: 'abc123', message: 'Add feature', filesChanged: [], diffSample: '' },
+        { hash: 'def456', message: 'Another feature', filesChanged: [], diffSample: '' },
+      ];
+
+      const result = await newProvider.analyzeCommitsForGrouping(commits, 'loose');
+
+      // Loose mode threshold is 0.6, so both commits should stay
+      expect(result.groups).toHaveLength(1);
+      expect(result.groups[0].commitHashes).toHaveLength(2);
+    });
+
+    it('should return all commits as ungrouped on malformed JSON', async () => {
+      const mockOllama = require('ollama');
+      mockOllama.Ollama.mockImplementation(() => ({
+        generate: jest.fn().mockResolvedValue({
+          response: 'This is not valid JSON at all',
+        }),
+        list: jest.fn().mockResolvedValue({ models: [{ name: 'qwen2.5:14b' }] }),
+      }));
+
+      const newProvider = new OllamaProvider();
+      const commits = [
+        { hash: 'abc123', message: 'Add login', filesChanged: [], diffSample: '' },
+        { hash: 'def456', message: 'Add logout', filesChanged: [], diffSample: '' },
+      ];
+
+      const result = await newProvider.analyzeCommitsForGrouping(commits, 'balanced');
+
+      // On parse failure, all commits should be ungrouped
+      expect(result.groups).toHaveLength(0);
+      expect(result.ungrouped).toContain('abc123');
+      expect(result.ungrouped).toContain('def456');
+    });
+
+    it('should dissolve groups with fewer than 2 commits after filtering', async () => {
+      const mockOllama = require('ollama');
+      mockOllama.Ollama.mockImplementation(() => ({
+        generate: jest.fn().mockResolvedValue({
+          response: JSON.stringify({
+            groups: [
+              {
+                name: 'Solo Feature',
+                theme: 'feature',
+                commits: [
+                  { hash: 'abc123', confidence: 0.95 },
+                  { hash: 'def456', confidence: 0.5 },  // Will be filtered in balanced mode
+                ],
+                overall_confidence: 0.72,
+                reasoning: 'Related',
+              },
+            ],
+            ungrouped: [],
+          }),
+        }),
+        list: jest.fn().mockResolvedValue({ models: [{ name: 'qwen2.5:14b' }] }),
+      }));
+
+      const newProvider = new OllamaProvider();
+      const commits = [
+        { hash: 'abc123', message: 'Add feature', filesChanged: [], diffSample: '' },
+        { hash: 'def456', message: 'Unrelated', filesChanged: [], diffSample: '' },
+      ];
+
+      const result = await newProvider.analyzeCommitsForGrouping(commits, 'balanced');
+
+      // def456 is below 0.8 threshold for balanced, leaving only 1 commit
+      // Group should be dissolved
+      expect(result.groups).toHaveLength(0);
+      expect(result.ungrouped).toContain('abc123');
+      expect(result.ungrouped).toContain('def456');
+    });
+  });
 });
