@@ -1504,6 +1504,11 @@ function renderGraph() {
   // Create the network using global vis object
   graphNetwork = new vis.Network(graphNetworkDiv, { nodes: nodesDataSet, edges: edgesDataSet }, options);
 
+  // Stop physics after stabilization to prevent continuous spinning
+  graphNetwork.once('stabilizationIterationsDone', () => {
+    graphNetwork.setOptions({ physics: { enabled: false } });
+  });
+
   // Handle node clicks
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   graphNetwork.on('click', (params: any) => {
