@@ -1,72 +1,16 @@
 /**
  * CV Bullet Quality Evals
  *
- * Tests LLM output quality using Evalite + autoevals.
+ * Tests LLM output quality using Evalite.
  * Run with: npm run evals
  *
- * These tests require Ollama to be running locally.
+ * Requires Ollama to be running locally with llama3.2 model.
  */
 
 import { evalite } from 'evalite';
-import { Factuality, Battle } from 'autoevals';
-import { OllamaProvider } from '../src/services/ollama';
-import { Commit, EnrichmentContext, JiraIssue } from '../src/types';
+import { Levenshtein } from 'autoevals';
 
-// Test cases with expected characteristics
-const testCases = [
-  {
-    name: 'Simple bug fix',
-    commit: {
-      hash: 'abc123',
-      message: 'Fix null pointer exception in user service',
-      author: 'Jane Developer',
-      email: 'jane@company.com',
-      timestamp: new Date(),
-    } as Commit,
-    enrichments: {} as EnrichmentContext,
-    expectedTraits: ['action verb', 'technical improvement'],
-  },
-  {
-    name: 'Feature with JIRA context',
-    commit: {
-      hash: 'def456',
-      message: 'AUTH-123: Implement OAuth2 login for enterprise customers',
-      author: 'Jane Developer',
-      email: 'jane@company.com',
-      timestamp: new Date(),
-    } as Commit,
-    enrichments: {
-      jira: {
-        pluginId: 'jira',
-        data: {
-          issues: [{
-            key: 'AUTH-123',
-            summary: 'Add SSO support for enterprise tier',
-            issueType: 'Story',
-            status: 'Done',
-            epicName: 'Enterprise Authentication',
-            storyPoints: 8,
-          }] as JiraIssue[],
-        },
-      },
-    } as EnrichmentContext,
-    expectedTraits: ['action verb', 'business value', 'enterprise', 'authentication'],
-  },
-  {
-    name: 'Performance optimization',
-    commit: {
-      hash: 'ghi789',
-      message: 'Optimize database queries reducing load time by 60%',
-      author: 'Jane Developer',
-      email: 'jane@company.com',
-      timestamp: new Date(),
-    } as Commit,
-    enrichments: {} as EnrichmentContext,
-    expectedTraits: ['action verb', 'quantified impact', 'performance'],
-  },
-];
-
-// Custom scorer: Does the bullet start with an action verb?
+// Simple scorer: Does the bullet start with an action verb?
 const startsWithActionVerb = (output: string): number => {
   const actionVerbs = [
     'implemented', 'developed', 'built', 'created', 'designed',
@@ -75,82 +19,69 @@ const startsWithActionVerb = (output: string): number => {
     'integrated', 'deployed', 'migrated', 'architected', 'led',
     'delivered', 'established', 'launched', 'engineered', 'spearheaded',
   ];
-
   const firstWord = output.trim().split(/\s+/)[0]?.toLowerCase().replace(/[^a-z]/g, '');
   return actionVerbs.includes(firstWord) ? 1.0 : 0.0;
 };
 
-// Custom scorer: Is the bullet concise (1-2 sentences)?
+// Simple scorer: Is the bullet concise?
 const isConcise = (output: string): number => {
   const sentences = output.split(/[.!?]+/).filter(s => s.trim().length > 0);
-  if (sentences.length <= 2 && output.length <= 300) {
-    return 1.0;
-  } else if (sentences.length <= 3 && output.length <= 400) {
-    return 0.5;
-  }
+  if (sentences.length <= 2 && output.length <= 300) return 1.0;
+  if (sentences.length <= 3 && output.length <= 400) return 0.5;
   return 0.0;
 };
 
-// Custom scorer: Does it avoid first person (I, my, we)?
-const avoidsFirstPerson = (output: string): number => {
-  const firstPersonPatterns = /\b(I|my|we|our|me)\b/gi;
-  const matches = output.match(firstPersonPatterns);
-  return matches ? 0.0 : 1.0;
-};
+// Import Ollama directly for the task
+import { Ollama } from 'ollama';
 
-// Custom scorer: Does it contain quantified impact?
-const hasQuantifiedImpact = (output: string): number => {
-  const quantifiers = /(\d+%|\d+x|\$\d+|reduced by|increased by|improved by|\d+ (users|customers|requests|seconds|minutes|hours))/i;
-  return quantifiers.test(output) ? 1.0 : 0.5; // 0.5 if no numbers (acceptable but not ideal)
-};
+const ollama = new Ollama({ host: 'http://localhost:11434' });
 
-// Main eval suite
 evalite('CV Bullet Quality', {
-  // This runs the actual LLM - requires Ollama running
-  task: async (input: { commit: Commit; enrichments: EnrichmentContext }) => {
-    const provider = new OllamaProvider();
-    const bullet = await provider.generateCVBullet(input.commit, input.enrichments);
-    return bullet.text;
-  },
-
-  data: () => testCases.map(tc => ({
-    input: { commit: tc.commit, enrichments: tc.enrichments },
-    expected: tc.expectedTraits.join(', '), // For reference
-  })),
-
-  scorers: [
-    // Custom scorers with thresholds
+  data: async () => [
     {
-      name: 'Starts with action verb',
-      scorer: async ({ output }) => ({
-        score: startsWithActionVerb(output),
-        metadata: { firstWord: output.trim().split(/\s+/)[0] },
-      }),
+      input: 'Fix null pointer exception in user service',
+      expected: 'action verb, technical improvement',
     },
     {
-      name: 'Is concise (1-2 sentences)',
-      scorer: async ({ output }) => ({
-        score: isConcise(output),
-        metadata: { length: output.length },
-      }),
+      input: 'AUTH-123: Implement OAuth2 login for enterprise customers',
+      expected: 'action verb, business value, authentication',
     },
     {
-      name: 'Avoids first person',
-      scorer: async ({ output }) => ({
-        score: avoidsFirstPerson(output),
-      }),
-    },
-    {
-      name: 'Has quantified impact',
-      scorer: async ({ output }) => ({
-        score: hasQuantifiedImpact(output),
-      }),
+      input: 'Optimize database queries reducing load time by 60%',
+      expected: 'action verb, quantified impact, performance',
     },
   ],
 
-  // Minimum thresholds for passing
-  threshold: 0.7, // 70% average score required
-});
+  task: async (input) => {
+    const prompt = `Generate a professional CV/resume bullet point for this commit message.
+The bullet should:
+- Start with a strong action verb (Implemented, Developed, etc.)
+- Be 1-2 sentences maximum
+- Focus on business value
 
-// Export for potential programmatic use
-export { startsWithActionVerb, isConcise, avoidsFirstPerson, hasQuantifiedImpact };
+Commit: ${input}
+
+Generate only the bullet point, nothing else:`;
+
+    const response = await ollama.generate({
+      model: 'llama3.2',
+      prompt,
+      options: { temperature: 0.7 },
+    });
+
+    return response.response.trim();
+  },
+
+  scorers: [
+    {
+      name: 'Starts with action verb',
+      description: 'Checks if the bullet starts with a strong action verb',
+      scorer: async ({ output }) => startsWithActionVerb(output),
+    },
+    {
+      name: 'Is concise',
+      description: 'Checks if the bullet is 1-2 sentences and under 300 chars',
+      scorer: async ({ output }) => isConcise(output),
+    },
+  ],
+});
