@@ -727,6 +727,58 @@ ipcMain.handle('test-jira', async (_event, config: { baseUrl: string; email: str
   }
 });
 
+// Tag commits for visualization
+ipcMain.handle('tag-commits', async (_event, commitHashes: string[], repoPath: string) => {
+  try {
+    const allCommits = commitCache.get(repoPath);
+    if (!allCommits) {
+      return { error: 'Repository not loaded' };
+    }
+
+    // Get selected commits
+    const selectedCommits = commitHashes
+      .map(hash => allCommits.find(c => c.hash === hash))
+      .filter((c): c is Commit => c !== undefined);
+
+    const config = getConfig();
+    const ollama = new OllamaProvider({
+      host: config.ollama?.host,
+      model: config.ollama?.model,
+    });
+
+    // Ensure model is available
+    const modelReady = await ollama.ensureModelAvailable();
+    if (!modelReady) {
+      return { error: `Model ${config.ollama?.model || 'qwen2.5:14b'} not available` };
+    }
+
+    // Get file changes for each commit (for better tagging)
+    const git = new GitPlugin(repoPath);
+    const commitsWithFiles = await Promise.all(
+      selectedCommits.map(async (commit) => ({
+        hash: commit.hash,
+        message: commit.message,
+        filesChanged: await git.getFilesChanged(commit.hash),
+      }))
+    );
+
+    // Tag commits with progress updates
+    const taggedCommits = await ollama.assignTopicTags(commitsWithFiles, (completed, total) => {
+      if (mainWindow) {
+        mainWindow.webContents.send('tagging-progress', {
+          current: completed,
+          total: total,
+          message: `Tagging commit ${completed} of ${total}...`,
+        });
+      }
+    });
+
+    return { taggedCommits };
+  } catch (error) {
+    return { error: String(error) };
+  }
+});
+
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {

@@ -2,6 +2,9 @@
  * CommitKit Renderer - UI Logic
  */
 
+// Import vis-network for graph visualization
+import { Network, DataSet, Options } from 'vis-network/standalone';
+
 interface CommitData {
   hash: string;
   message: string;
@@ -37,6 +40,12 @@ interface ErrorResult {
   error: string;
 }
 
+interface TaggedCommit {
+  hash: string;
+  message: string;
+  tags: string[];
+}
+
 type LoadCommitsResult = CommitData[] | ErrorResult;
 type GenerateBulletResult = BulletData | ErrorResult;
 type GenerateBulletsResult = BulletData[] | ErrorResult;
@@ -67,6 +76,34 @@ let bulletEditMode: Set<number> = new Set(); // indices of bullets in edit mode
 let bulletEdits: Map<number, StarEdits> = new Map(); // index -> edited STAR values
 let bulletContext: Map<number, string> = new Map(); // index -> user context notes
 let expandedStarSections: Map<number, Set<string>> = new Map(); // index -> set of expanded sections (s/t/a/r)
+
+// Graph visualization state
+let currentView: 'list' | 'graph' = 'list';
+let taggedCommits: TaggedCommit[] = [];
+let graphNetwork: Network | null = null;
+let graphSelectedNodes: Set<string> = new Set();
+let isTagging = false;
+
+// Topic tag colors (matching the tag taxonomy)
+const TAG_COLORS: Record<string, string> = {
+  authentication: '#ef4444',
+  api: '#3b82f6',
+  ui: '#8b5cf6',
+  database: '#f59e0b',
+  testing: '#10b981',
+  documentation: '#6366f1',
+  config: '#64748b',
+  deployment: '#0891b2',
+  'ci-cd': '#0d9488',
+  bugfix: '#dc2626',
+  refactor: '#7c3aed',
+  performance: '#059669',
+  security: '#b91c1c',
+  logging: '#475569',
+  email: '#ec4899',
+  payments: '#22c55e',
+  other: '#6b7280',
+};
 
 interface SavedRepo {
   path: string;
@@ -122,6 +159,16 @@ const bulkGroupAction = document.getElementById('bulkGroupAction') as HTMLElemen
 const bulkGroupSelect = document.getElementById('bulkGroupSelect') as HTMLSelectElement;
 const bulkMoveBtn = document.getElementById('bulkMoveBtn') as HTMLButtonElement;
 
+// Graph visualization elements
+const graphContainer = document.getElementById('graphContainer') as HTMLElement;
+const graphNetworkDiv = document.getElementById('graphNetwork') as HTMLElement;
+const graphLegendItems = document.getElementById('graphLegendItems') as HTMLElement;
+const graphInfo = document.getElementById('graphInfo') as HTMLElement;
+const graphSelectionInfo = document.getElementById('graphSelectionInfo') as HTMLElement;
+const graphSelectedCount = document.getElementById('graphSelectedCount') as HTMLElement;
+const listViewContainer = document.getElementById('listViewContainer') as HTMLElement;
+const viewToggleBtns = document.querySelectorAll('.view-toggle-btn');
+
 // Initialize
 async function init() {
   // Check Ollama status
@@ -175,6 +222,21 @@ async function init() {
   window.commitkit.onProgress((progress) => {
     progressText.textContent = progress.message;
     progressFill.style.width = `${(progress.current / progress.total) * 100}%`;
+  });
+
+  // Listen for tagging progress
+  window.commitkit.onTaggingProgress((progress) => {
+    if (graphInfo) {
+      graphInfo.textContent = progress.message;
+    }
+  });
+
+  // View toggle event listeners
+  viewToggleBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const view = btn.getAttribute('data-view') as 'list' | 'graph';
+      switchView(view);
+    });
   });
 }
 
@@ -1280,6 +1342,315 @@ async function testJiraConnection() {
   } else {
     jiraStatus.textContent = 'Failed: ' + (result.error || 'Unknown error');
     jiraStatus.className = 'status-text error';
+  }
+}
+
+// ============================================================
+// Graph Visualization Functions
+// ============================================================
+
+/**
+ * Switch between list and graph views
+ */
+async function switchView(view: 'list' | 'graph') {
+  currentView = view;
+
+  // Update toggle button states
+  viewToggleBtns.forEach(btn => {
+    if (btn.getAttribute('data-view') === view) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+
+  if (view === 'list') {
+    graphContainer.classList.add('hidden');
+    listViewContainer.classList.remove('hidden');
+  } else {
+    listViewContainer.classList.add('hidden');
+    graphContainer.classList.remove('hidden');
+
+    // Tag commits if not already tagged
+    if (taggedCommits.length === 0 && commits.length > 0 && !isTagging) {
+      await tagCommitsForGraph();
+    } else if (taggedCommits.length > 0) {
+      renderGraph();
+    }
+  }
+}
+
+/**
+ * Tag commits using AI for graph visualization
+ */
+async function tagCommitsForGraph() {
+  if (!currentRepoPath || commits.length === 0 || isTagging) return;
+
+  isTagging = true;
+  graphNetworkDiv.innerHTML = `
+    <div class="tagging-progress">
+      <div class="loading"></div>
+      <span>Analyzing commits for topic tags...</span>
+    </div>
+  `;
+
+  try {
+    const hashes = commits.map(c => c.hash);
+    const result = await window.commitkit.tagCommits(hashes, currentRepoPath);
+
+    if (result.error) {
+      graphNetworkDiv.innerHTML = `<div class="tagging-progress" style="color: #ef4444;">Error: ${result.error}</div>`;
+      isTagging = false;
+      return;
+    }
+
+    if (result.taggedCommits) {
+      taggedCommits = result.taggedCommits;
+      renderGraph();
+    }
+  } catch (error) {
+    graphNetworkDiv.innerHTML = `<div class="tagging-progress" style="color: #ef4444;">Error: ${error}</div>`;
+  }
+
+  isTagging = false;
+}
+
+/**
+ * Render the force-directed graph
+ */
+function renderGraph() {
+  if (taggedCommits.length === 0) return;
+
+  // Clear existing graph
+  graphNetworkDiv.innerHTML = '';
+
+  // Build nodes and edges
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nodes: any[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const edges: any[] = [];
+
+  // Track which tags are actually used
+  const usedTags = new Set<string>();
+
+  // Add tag hub nodes
+  const tagCounts: Record<string, number> = {};
+  taggedCommits.forEach(tc => {
+    tc.tags.forEach(tag => {
+      tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+      usedTags.add(tag);
+    });
+  });
+
+  // Add tag nodes (larger, central)
+  Object.entries(tagCounts).forEach(([tag, count]) => {
+    nodes.push({
+      id: `tag-${tag}`,
+      label: `${tag}\n(${count})`,
+      color: TAG_COLORS[tag] || '#6b7280',
+      shape: 'circle',
+      size: 20 + Math.min(count * 2, 30),
+      title: `${tag}: ${count} commits`,
+      font: { color: '#ffffff' },
+    });
+  });
+
+  // Add commit nodes (smaller, peripheral)
+  taggedCommits.forEach(tc => {
+    const commitData = commits.find(c => c.hash === tc.hash);
+    const shortMessage = tc.message.substring(0, 40) + (tc.message.length > 40 ? '...' : '');
+    const isSelected = selectedCommits.has(tc.hash);
+
+    nodes.push({
+      id: `commit-${tc.hash}`,
+      label: tc.hash.substring(0, 7),
+      color: isSelected ? '#3b82f6' : '#374151',
+      shape: 'dot',
+      size: isSelected ? 12 : 8,
+      title: `${shortMessage}\n\nTags: ${tc.tags.join(', ')}\n${commitData ? commitData.author : ''}`,
+      font: { color: '#9ca3af' },
+    });
+
+    // Add edges from commit to its tags
+    tc.tags.forEach(tag => {
+      edges.push({
+        from: `commit-${tc.hash}`,
+        to: `tag-${tag}`,
+        color: { color: TAG_COLORS[tag] || '#6b7280', opacity: 0.3 },
+      });
+    });
+  });
+
+  // Create DataSets
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nodesDataSet = new DataSet(nodes as any);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const edgesDataSet = new DataSet(edges as any);
+
+  // Network options
+  const options: Options = {
+    nodes: {
+      borderWidth: 2,
+      borderWidthSelected: 3,
+      font: {
+        size: 10,
+        face: 'system-ui, sans-serif',
+      },
+    },
+    edges: {
+      width: 1,
+      smooth: {
+        enabled: true,
+        type: 'continuous',
+        roundness: 0.5,
+      },
+    },
+    physics: {
+      enabled: true,
+      solver: 'forceAtlas2Based',
+      forceAtlas2Based: {
+        gravitationalConstant: -80,
+        centralGravity: 0.01,
+        springLength: 100,
+        springConstant: 0.08,
+        damping: 0.4,
+      },
+      stabilization: {
+        enabled: true,
+        iterations: 100,
+        fit: true,
+      },
+    },
+    interaction: {
+      hover: true,
+      multiselect: true,
+      selectConnectedEdges: false,
+    },
+  };
+
+  // Create the network
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  graphNetwork = new Network(graphNetworkDiv, { nodes: nodesDataSet as any, edges: edgesDataSet as any }, options);
+
+  // Handle node clicks
+  graphNetwork.on('click', (params) => {
+    if (params.nodes.length > 0) {
+      const nodeId = params.nodes[0] as string;
+
+      if (nodeId.startsWith('commit-')) {
+        // Clicked on a commit node
+        const hash = nodeId.replace('commit-', '');
+        handleGraphCommitClick(hash, params.event.srcEvent.shiftKey);
+      } else if (nodeId.startsWith('tag-')) {
+        // Clicked on a tag node - select all commits with this tag
+        const tag = nodeId.replace('tag-', '');
+        handleGraphTagClick(tag, params.event.srcEvent.shiftKey);
+      }
+    }
+  });
+
+  // Render legend
+  renderGraphLegend(usedTags);
+
+  // Update info text
+  if (graphInfo) {
+    graphInfo.textContent = `${taggedCommits.length} commits · ${usedTags.size} topics · Click nodes to explore`;
+  }
+
+  // Update selection display
+  updateGraphSelection();
+}
+
+/**
+ * Handle clicking on a commit node in the graph
+ */
+function handleGraphCommitClick(hash: string, isShiftKey: boolean) {
+  if (isShiftKey) {
+    // Multi-select mode
+    if (graphSelectedNodes.has(hash)) {
+      graphSelectedNodes.delete(hash);
+      selectedCommits.delete(hash);
+    } else {
+      graphSelectedNodes.add(hash);
+      selectedCommits.add(hash);
+    }
+  } else {
+    // Single select - clear previous and select this one
+    graphSelectedNodes.clear();
+    graphSelectedNodes.add(hash);
+    selectedCommits.clear();
+    selectedCommits.add(hash);
+  }
+
+  updateGraphSelection();
+  updateSelectionCount();
+  renderGraph(); // Re-render to update node colors
+}
+
+/**
+ * Handle clicking on a tag node - select all commits with that tag
+ */
+function handleGraphTagClick(tag: string, isShiftKey: boolean) {
+  // Find all commits with this tag
+  const hashesWithTag = taggedCommits
+    .filter(tc => tc.tags.includes(tag))
+    .map(tc => tc.hash);
+
+  if (!isShiftKey) {
+    // Clear previous selection
+    graphSelectedNodes.clear();
+    selectedCommits.clear();
+  }
+
+  // Add all commits with this tag
+  hashesWithTag.forEach(hash => {
+    graphSelectedNodes.add(hash);
+    selectedCommits.add(hash);
+  });
+
+  updateGraphSelection();
+  updateSelectionCount();
+  renderGraph();
+}
+
+/**
+ * Update the graph selection info display
+ */
+function updateGraphSelection() {
+  const count = graphSelectedNodes.size;
+
+  if (count > 0) {
+    graphSelectionInfo.classList.add('visible');
+    graphSelectedCount.textContent = String(count);
+  } else {
+    graphSelectionInfo.classList.remove('visible');
+  }
+}
+
+/**
+ * Render the graph legend showing used tags
+ */
+function renderGraphLegend(usedTags: Set<string>) {
+  if (!graphLegendItems) return;
+
+  const sortedTags = Array.from(usedTags).sort((a, b) => {
+    const countA = taggedCommits.filter(tc => tc.tags.includes(a)).length;
+    const countB = taggedCommits.filter(tc => tc.tags.includes(b)).length;
+    return countB - countA;
+  });
+
+  graphLegendItems.innerHTML = sortedTags.slice(0, 10).map(tag => {
+    const count = taggedCommits.filter(tc => tc.tags.includes(tag)).length;
+    return `
+      <div class="graph-legend-item">
+        <div class="graph-legend-dot" style="background: ${TAG_COLORS[tag] || '#6b7280'}"></div>
+        <span>${tag} (${count})</span>
+      </div>
+    `;
+  }).join('');
+
+  if (sortedTags.length > 10) {
+    graphLegendItems.innerHTML += `<div class="graph-legend-item" style="color: #666;">+${sortedTags.length - 10} more</div>`;
   }
 }
 

@@ -126,6 +126,36 @@ export interface ClusteringResult {
   ungrouped: string[];
 }
 
+// Topic tags for commit visualization
+export const TOPIC_TAGS = [
+  'authentication',
+  'api',
+  'ui',
+  'database',
+  'testing',
+  'documentation',
+  'config',
+  'deployment',
+  'ci-cd',
+  'bugfix',
+  'refactor',
+  'performance',
+  'security',
+  'logging',
+  'email',
+  'payments',
+  'other',
+] as const;
+
+export type TopicTag = typeof TOPIC_TAGS[number];
+
+// Tagged commit for visualization
+export interface CommitTags {
+  hash: string;
+  message: string;
+  tags: TopicTag[];
+}
+
 // Grouped bullet output
 export interface GroupedBullet {
   text: string;

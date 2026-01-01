@@ -6,7 +6,7 @@
  */
 
 import { Ollama } from 'ollama';
-import { AIProvider, Commit, EnrichmentContext, CVBullet, JiraIssue, GitHubPR, CommitGroup, GroupedBullet, ClusteringSensitivity, ClusteringResult } from '../types';
+import { AIProvider, Commit, EnrichmentContext, CVBullet, JiraIssue, GitHubPR, CommitGroup, GroupedBullet, ClusteringSensitivity, ClusteringResult, CommitTags, TopicTag, TOPIC_TAGS } from '../types';
 
 export interface OllamaConfig {
   host?: string;        // Default: http://localhost:11434
@@ -546,5 +546,125 @@ Respond with only the JSON:`;
         ungrouped: commits.map(c => c.hash),
       };
     }
+  }
+
+  /**
+   * Build prompt for topic tagging (batch of commits)
+   */
+  buildTaggingPrompt(commits: Array<{ hash: string; message: string; filesChanged?: string[] }>): string {
+    const tagList = TOPIC_TAGS.join(', ');
+
+    const commitList = commits.map((c, i) => {
+      const firstLine = c.message.split('\n')[0];
+      const files = c.filesChanged?.slice(0, 5).join(', ') || '';
+      return `${i + 1}. "${firstLine}"${files ? ` [Files: ${files}]` : ''}`;
+    }).join('\n');
+
+    return `Assign 1-3 topic tags to each commit from this list: ${tagList}
+
+COMMITS:
+${commitList}
+
+OUTPUT FORMAT - Respond with ONLY valid JSON, no other text:
+{
+  "tags": [
+    [1, ["api", "testing"]],
+    [2, ["ui", "bugfix"]],
+    [3, ["documentation"]]
+  ]
+}
+
+RULES:
+1. Each commit gets 1-3 tags maximum
+2. Use ONLY tags from the provided list
+3. Choose tags based on the commit message AND file paths
+4. If unsure, use "other"
+
+Respond with only the JSON:`;
+  }
+
+  /**
+   * Assign topic tags to commits for visualization
+   * Batches commits to reduce API calls (10 per batch)
+   */
+  async assignTopicTags(
+    commits: Array<{ hash: string; message: string; filesChanged?: string[] }>,
+    onProgress?: (completed: number, total: number) => void
+  ): Promise<CommitTags[]> {
+    const BATCH_SIZE = 10;
+    const results: CommitTags[] = [];
+    const batches: Array<Array<{ hash: string; message: string; filesChanged?: string[] }>> = [];
+
+    // Split into batches
+    for (let i = 0; i < commits.length; i += BATCH_SIZE) {
+      batches.push(commits.slice(i, i + BATCH_SIZE));
+    }
+
+    let completed = 0;
+    for (const batch of batches) {
+      try {
+        const prompt = this.buildTaggingPrompt(batch);
+        const response = await this.generateText(prompt);
+
+        // Parse JSON response
+        let jsonStr = response;
+        if (response.includes('```json')) {
+          jsonStr = response.split('```json')[1]?.split('```')[0] || response;
+        } else if (response.includes('```')) {
+          jsonStr = response.split('```')[1]?.split('```')[0] || response;
+        }
+
+        const parsed = JSON.parse(jsonStr.trim()) as {
+          tags: Array<[number, string[]]>;
+        };
+
+        // Map results back to commits
+        for (const [index, tags] of parsed.tags) {
+          const commit = batch[index - 1]; // 1-based index
+          if (commit) {
+            // Validate tags against allowed list
+            const validTags = tags.filter((t): t is TopicTag =>
+              TOPIC_TAGS.includes(t as TopicTag)
+            );
+            results.push({
+              hash: commit.hash,
+              message: commit.message.split('\n')[0],
+              tags: validTags.length > 0 ? validTags : ['other'],
+            });
+          }
+        }
+
+        // Handle any commits not in response
+        for (let i = 0; i < batch.length; i++) {
+          const commit = batch[i];
+          if (!results.find(r => r.hash === commit.hash)) {
+            results.push({
+              hash: commit.hash,
+              message: commit.message.split('\n')[0],
+              tags: ['other'],
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Failed to tag batch:', error);
+        // Fallback: tag all in batch as "other"
+        for (const commit of batch) {
+          if (!results.find(r => r.hash === commit.hash)) {
+            results.push({
+              hash: commit.hash,
+              message: commit.message.split('\n')[0],
+              tags: ['other'],
+            });
+          }
+        }
+      }
+
+      completed += batch.length;
+      if (onProgress) {
+        onProgress(completed, commits.length);
+      }
+    }
+
+    return results;
   }
 }

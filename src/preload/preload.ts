@@ -29,6 +29,10 @@ contextBridge.exposeInMainWorld('commitkit', {
   generateGroupedBullets: (commitHashes: string[], repoPath: string, groupOverrides?: Record<string, string | null>) =>
     ipcRenderer.invoke('generate-grouped-bullets', commitHashes, repoPath, groupOverrides),
 
+  // Commit tagging for visualization
+  tagCommits: (commitHashes: string[], repoPath: string) =>
+    ipcRenderer.invoke('tag-commits', commitHashes, repoPath),
+
   // Ollama status
   checkOllamaStatus: () => ipcRenderer.invoke('check-ollama-status'),
   getOllamaModels: () => ipcRenderer.invoke('get-ollama-models'),
@@ -43,6 +47,9 @@ contextBridge.exposeInMainWorld('commitkit', {
   // Events
   onProgress: (callback: (progress: { current: number; total: number; message: string }) => void) => {
     ipcRenderer.on('generation-progress', (_event, progress) => callback(progress));
+  },
+  onTaggingProgress: (callback: (progress: { current: number; total: number; message: string }) => void) => {
+    ipcRenderer.on('tagging-progress', (_event, progress) => callback(progress));
   },
 });
 
@@ -68,6 +75,7 @@ export interface CommitKitAPI {
   generateBullet: (commitHash: string, repoPath: string) => Promise<BulletData>;
   generateBullets: (commitHashes: string[], repoPath: string) => Promise<BulletData[]>;
   generateGroupedBullets: (commitHashes: string[], repoPath: string, groupOverrides?: Record<string, string | null>) => Promise<GroupedBulletData[]>;
+  tagCommits: (commitHashes: string[], repoPath: string) => Promise<{ taggedCommits?: TaggedCommit[]; error?: string }>;
   checkOllamaStatus: () => Promise<{ connected: boolean; model?: string; error?: string }>;
   getOllamaModels: () => Promise<{ installed: string[]; recommended: Array<{ name: string; description: string }>; current: string; error?: string }>;
   getConfig: () => Promise<{ github?: { token: string }; jira?: { baseUrl: string; email: string; apiToken: string }; ollama?: { host?: string; model?: string; clusteringSensitivity?: 'strict' | 'balanced' | 'loose' } }>;
@@ -75,6 +83,7 @@ export interface CommitKitAPI {
   testGitHub: (token: string) => Promise<{ success: boolean; error?: string }>;
   testJira: (config: { baseUrl: string; email: string; apiToken: string }) => Promise<{ success: boolean; error?: string }>;
   onProgress: (callback: (progress: { current: number; total: number; message: string }) => void) => void;
+  onTaggingProgress: (callback: (progress: { current: number; total: number; message: string }) => void) => void;
 }
 
 export interface CommitData {
@@ -104,6 +113,12 @@ export interface GroupedBulletData {
   sprint?: string;
   reasoning?: string;  // AI explanation for grouping (ai-suggested only)
   confidence?: number; // AI confidence score 0-1 (ai-suggested only)
+}
+
+export interface TaggedCommit {
+  hash: string;
+  message: string;
+  tags: string[];
 }
 
 declare global {
