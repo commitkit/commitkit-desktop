@@ -85,7 +85,9 @@ const actionVerbs = [
 ];
 
 function startsWithActionVerb(output: string): boolean {
-  const firstWord = output.trim().split(/\s+/)[0]?.toLowerCase().replace(/[^a-z]/g, '');
+  // Strip leading bullet characters (•, -, *, etc.) before checking
+  const cleaned = output.trim().replace(/^[\s\-\*•·▪▸►]+/, '').trim();
+  const firstWord = cleaned.split(/\s+/)[0]?.toLowerCase().replace(/[^a-z]/g, '');
   return actionVerbs.includes(firstWord);
 }
 
