@@ -585,6 +585,10 @@
         <div class="selection-info">
           <span id="selectionCount">0 commits selected</span>
         </div>
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: #ccc;">
+          <input type="checkbox" id="groupedModeToggle" style="width: 16px; height: 16px; cursor: pointer;">
+          Group by feature
+        </label>
         <button id="selectAllBtn" class="secondary">Select All</button>
         <button id="generateBtn" disabled>Generate Bullets</button>
       </div>
@@ -594,6 +598,11 @@
         <div class="progress-bar">
           <div class="progress-fill" id="progressFill"></div>
         </div>
+      </div>
+
+      <!-- Grouped bullets container -->
+      <div id="groupedBulletsContainer" class="hidden" style="margin-bottom: 20px;">
+        <!-- Grouped bullets will be rendered here -->
       </div>
 
       <div class="commits-list" id="commitsList">

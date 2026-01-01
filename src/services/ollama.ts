@@ -6,7 +6,7 @@
  */
 
 import { Ollama } from 'ollama';
-import { AIProvider, Commit, EnrichmentContext, CVBullet, JiraIssue, GitHubPR } from '../types';
+import { AIProvider, Commit, EnrichmentContext, CVBullet, JiraIssue, GitHubPR, CommitGroup, GroupedBullet } from '../types';
 
 export interface OllamaConfig {
   host?: string;        // Default: http://localhost:11434
@@ -230,5 +230,82 @@ Generate only the bullet point text, nothing else:`);
     }
 
     return bullets;
+  }
+
+  /**
+   * Generate a consolidated CV bullet from a group of related commits
+   */
+  async generateGroupedBullet(group: CommitGroup): Promise<GroupedBullet> {
+    const prompt = this.buildGroupedPrompt(group);
+    const text = await this.generateText(prompt);
+
+    return {
+      text,
+      group,
+      generatedAt: new Date(),
+      aiProvider: this.id,
+      aiModel: this.model,
+    };
+  }
+
+  /**
+   * Build prompt for generating a consolidated bullet from multiple commits
+   */
+  buildGroupedPrompt(group: CommitGroup): string {
+    const parts: string[] = [];
+
+    // Base instruction for grouped bullets
+    parts.push(`You are summarizing a software engineering project/feature for a CV/resume.
+
+CONTEXT:
+- ${group.commits.length} commits over this feature/project
+- Group: ${group.groupName} (${group.groupType})
+${group.sprint ? `- Sprint: ${group.sprint}` : ''}
+${group.labels.length > 0 ? `- Labels: ${group.labels.join(', ')}` : ''}
+
+JIRA TICKETS IN THIS FEATURE:`);
+
+    // Add JIRA issue summaries (limit to first 10 to avoid prompt overload)
+    const issuesToShow = group.jiraIssues.slice(0, 10);
+    for (const issue of issuesToShow) {
+      parts.push(`
+- ${issue.key}: ${issue.summary}
+  Type: ${issue.issueType}${issue.description ? `
+  Description: ${issue.description.substring(0, 200)}...` : ''}`);
+    }
+    if (group.jiraIssues.length > 10) {
+      parts.push(`\n... and ${group.jiraIssues.length - 10} more tickets`);
+    }
+
+    // Add commit message samples (first 5 and last 5 for context)
+    parts.push(`\n\nSAMPLE COMMIT MESSAGES:`);
+    const commitSamples = group.commits.length <= 10
+      ? group.commits
+      : [...group.commits.slice(0, 5), ...group.commits.slice(-5)];
+    for (const commit of commitSamples) {
+      const shortMsg = commit.message.split('\n')[0].substring(0, 100);
+      parts.push(`- ${shortMsg}`);
+    }
+
+    parts.push(`
+
+STRICT RULES:
+1. Generate exactly ONE professional CV bullet point summarizing the ENTIRE feature/project
+2. Start with a strong past-tense action verb (Designed, Implemented, Developed, Built, Led, etc.)
+3. Maximum 30 words - capture the essence, not every detail
+4. Focus on the OVERALL accomplishment and business value
+5. NEVER invent metrics or impact claims not evident from the tickets
+6. Do NOT list individual tasks - synthesize into one cohesive achievement
+7. Use natural, professional language suitable for a senior engineer's resume
+
+GOOD EXAMPLE:
+"Designed and implemented a comprehensive find-and-replace system enabling content administrators to bulk-update text across enterprise learning materials with full audit history."
+
+BAD EXAMPLE (too detailed):
+"Added find-and-replace for DocumentObjectTextarea, CourseSection, SimpleTest, SurveyTest, VideoTest, and 15 other content types with history tracking."
+
+Generate only the bullet point text, nothing else:`);
+
+    return parts.join('\n');
   }
 }

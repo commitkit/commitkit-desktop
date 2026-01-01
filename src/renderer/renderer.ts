@@ -18,6 +18,19 @@ interface BulletData {
   hasJira?: boolean;
 }
 
+interface GroupedBulletData {
+  groupKey: string;
+  groupName: string;
+  groupType: string;
+  commitCount: number;
+  issueCount: number;
+  text: string;
+  generatedAt: string;
+  commits: Array<{ hash: string; message: string }>;
+  labels: string[];
+  sprint?: string;
+}
+
 interface ErrorResult {
   error: string;
 }
@@ -25,6 +38,7 @@ interface ErrorResult {
 type LoadCommitsResult = CommitData[] | ErrorResult;
 type GenerateBulletResult = BulletData | ErrorResult;
 type GenerateBulletsResult = BulletData[] | ErrorResult;
+type GenerateGroupedBulletsResult = GroupedBulletData[] | ErrorResult;
 type SelectRepoResult = string | null | ErrorResult;
 
 // State
@@ -32,6 +46,8 @@ let currentRepoPath: string | null = null;
 let commits: CommitData[] = [];
 let selectedCommits: Set<string> = new Set();
 let bullets: Map<string, BulletData> = new Map();
+let groupedBullets: GroupedBulletData[] = [];
+let isGroupedMode = false;
 
 interface SavedRepo {
   path: string;
@@ -74,6 +90,10 @@ const testJiraBtn = document.getElementById('testJiraBtn') as HTMLButtonElement;
 const jiraStatus = document.getElementById('jiraStatus') as HTMLElement;
 const ollamaModel = document.getElementById('ollamaModel') as HTMLSelectElement;
 
+// Grouped mode elements
+const groupedModeToggle = document.getElementById('groupedModeToggle') as HTMLInputElement;
+const groupedBulletsContainer = document.getElementById('groupedBulletsContainer') as HTMLElement;
+
 // Initialize
 async function init() {
   // Check Ollama status
@@ -90,7 +110,23 @@ async function init() {
   addRepoBtn.addEventListener('click', addRepository);
   addRepoBtn2.addEventListener('click', addRepository);
   selectAllBtn.addEventListener('click', toggleSelectAll);
-  generateBtn.addEventListener('click', generateBullets);
+  generateBtn.addEventListener('click', handleGenerateBullets);
+
+  // Grouped mode toggle
+  if (groupedModeToggle) {
+    groupedModeToggle.addEventListener('change', () => {
+      isGroupedMode = groupedModeToggle.checked;
+      updateGenerateButtonText();
+      // Clear existing results when switching modes
+      if (isGroupedMode) {
+        bullets.clear();
+      } else {
+        groupedBullets = [];
+      }
+      renderCommits();
+      renderGroupedBullets();
+    });
+  }
 
   // Settings modal listeners
   settingsBtn.addEventListener('click', openSettings);
@@ -302,6 +338,14 @@ function updateSelectionCount() {
   selectAllBtn.textContent = selected === total ? 'Deselect All' : 'Select All';
 }
 
+async function handleGenerateBullets() {
+  if (isGroupedMode) {
+    await generateGroupedBulletsAction();
+  } else {
+    await generateBullets();
+  }
+}
+
 async function generateBullets() {
   if (!currentRepoPath || selectedCommits.size === 0) return;
 
@@ -324,6 +368,99 @@ async function generateBullets() {
   progressContainer.classList.add('hidden');
   generateBtn.disabled = false;
 }
+
+async function generateGroupedBulletsAction() {
+  if (!currentRepoPath || selectedCommits.size === 0) return;
+
+  generateBtn.disabled = true;
+  progressContainer.classList.remove('hidden');
+  progressFill.style.width = '0%';
+
+  const hashes = Array.from(selectedCommits);
+  const results = await window.commitkit.generateGroupedBullets(hashes, currentRepoPath) as GenerateGroupedBulletsResult;
+
+  if (Array.isArray(results)) {
+    groupedBullets = results;
+    renderGroupedBullets();
+  } else if (isError(results)) {
+    alert(`Error: ${results.error}`);
+  }
+
+  progressContainer.classList.add('hidden');
+  generateBtn.disabled = false;
+}
+
+function updateGenerateButtonText() {
+  if (isGroupedMode) {
+    generateBtn.textContent = 'Generate Grouped Bullets';
+  } else {
+    generateBtn.textContent = 'Generate Bullets';
+  }
+}
+
+function renderGroupedBullets() {
+  if (!groupedBulletsContainer) return;
+
+  if (!isGroupedMode || groupedBullets.length === 0) {
+    groupedBulletsContainer.classList.add('hidden');
+    return;
+  }
+
+  groupedBulletsContainer.classList.remove('hidden');
+  groupedBulletsContainer.innerHTML = `
+    <h3 style="margin-bottom: 16px; color: #f0f0f0;">Grouped Bullets (${groupedBullets.length} groups from ${selectedCommits.size} commits)</h3>
+    ${groupedBullets.map((group, index) => `
+      <div class="grouped-bullet-item" style="background: #2a2a2a; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+        <div class="group-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+          <div>
+            <span class="group-name" style="font-weight: 600; color: #f0f0f0; font-size: 14px;">${escapeHtml(group.groupName)}</span>
+            <span class="group-meta" style="color: #888; font-size: 12px; margin-left: 8px;">
+              ${group.commitCount} commits · ${group.issueCount} tickets
+              ${group.groupType === 'epic' ? ' · Epic' : group.groupType === 'project' ? ' · Project' : ''}
+            </span>
+          </div>
+          <div class="group-badges">
+            ${group.sprint ? `<span class="badge" style="background: #3b82f6; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 4px;">${escapeHtml(group.sprint)}</span>` : ''}
+            ${group.labels.slice(0, 3).map(label =>
+              `<span class="badge" style="background: #6b7280; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 4px;">${escapeHtml(label)}</span>`
+            ).join('')}
+            ${group.labels.length > 3 ? `<span style="color: #888; font-size: 11px; margin-left: 4px;">+${group.labels.length - 3} more</span>` : ''}
+          </div>
+        </div>
+        <div class="bullet-text" style="background: #1a1a1a; padding: 12px; border-radius: 6px; color: #10b981; font-size: 14px; line-height: 1.5; margin-bottom: 12px;">
+          ${escapeHtml(group.text)}
+        </div>
+        <div class="bullet-actions" style="display: flex; gap: 8px;">
+          <button onclick="copyGroupedBullet(${index})" style="background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Copy</button>
+          <button onclick="toggleGroupCommits(${index})" class="secondary" style="background: #374151; color: #d1d5db; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Show Commits (${group.commitCount})</button>
+        </div>
+        <div id="group-commits-${index}" class="group-commits hidden" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #374151;">
+          ${group.commits.map(c => `
+            <div style="font-size: 12px; color: #9ca3af; padding: 4px 0; display: flex;">
+              <span style="font-family: monospace; color: #6b7280; min-width: 70px;">${c.hash.substring(0, 7)}</span>
+              <span style="color: #d1d5db;">${escapeHtml(c.message.substring(0, 80))}${c.message.length > 80 ? '...' : ''}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
+// Global functions for grouped bullets
+(window as any).copyGroupedBullet = async (index: number) => {
+  const group = groupedBullets[index];
+  if (group) {
+    await navigator.clipboard.writeText(group.text);
+  }
+};
+
+(window as any).toggleGroupCommits = (index: number) => {
+  const el = document.getElementById(`group-commits-${index}`);
+  if (el) {
+    el.classList.toggle('hidden');
+  }
+};
 
 // Global functions for button onclick handlers
 (window as any).copyBullet = async (hash: string) => {

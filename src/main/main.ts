@@ -11,7 +11,7 @@ import { GitHubPlugin } from '../integrations/github';
 import { JiraPlugin } from '../integrations/jira';
 import { OllamaProvider } from '../services/ollama';
 import { getConfig, updateConfig, AppConfig, getSavedRepos, addRepo, removeRepo } from '../services/config';
-import { Commit, EnrichmentContext } from '../types';
+import { Commit, EnrichmentContext, JiraIssue, CommitGroup } from '../types';
 
 // Set app name for macOS menu bar
 app.setName('CommitKit');
@@ -110,6 +110,114 @@ function enrichCommitWithCache(
   }
 
   return enrichments;
+}
+
+/**
+ * Group commits by epic (preferred) or project key (fallback)
+ * Commits without JIRA refs go into an "ungrouped" bucket
+ */
+function groupCommitsByFeature(
+  commits: Commit[],
+  jiraCache: Map<string, JiraIssue>
+): CommitGroup[] {
+  const groups = new Map<string, CommitGroup>();
+  const ungroupedCommits: Commit[] = [];
+
+  for (const commit of commits) {
+    const matches = commit.message.match(JIRA_KEY_REGEX);
+    if (!matches || matches.length === 0) {
+      ungroupedCommits.push(commit);
+      continue;
+    }
+
+    // Find the first ticket with an epic, or use project key as fallback
+    let groupKey: string | null = null;
+    let groupType: 'epic' | 'project' = 'project';
+    let groupName = '';
+    const commitIssues: JiraIssue[] = [];
+
+    for (const match of matches) {
+      const issue = jiraCache.get(match.toUpperCase());
+      if (issue) {
+        commitIssues.push(issue);
+        // Prefer epic grouping
+        if (issue.epicKey && !groupKey) {
+          groupKey = issue.epicKey;
+          groupType = 'epic';
+          groupName = issue.epicName || issue.epicKey;
+        }
+      }
+    }
+
+    // Fallback to project key if no epic found
+    if (!groupKey && matches.length > 0) {
+      const projectKey = matches[0].toUpperCase().split('-')[0];
+      groupKey = projectKey;
+      groupType = 'project';
+      groupName = `${projectKey} Project`;
+    }
+
+    if (!groupKey) {
+      ungroupedCommits.push(commit);
+      continue;
+    }
+
+    // Add to existing group or create new one
+    if (groups.has(groupKey)) {
+      const group = groups.get(groupKey)!;
+      group.commits.push(commit);
+      // Add unique issues
+      for (const issue of commitIssues) {
+        if (!group.jiraIssues.find(i => i.key === issue.key)) {
+          group.jiraIssues.push(issue);
+        }
+      }
+      // Merge labels
+      for (const issue of commitIssues) {
+        for (const label of issue.labels || []) {
+          if (!group.labels.includes(label)) {
+            group.labels.push(label);
+          }
+        }
+      }
+    } else {
+      const allLabels: string[] = [];
+      for (const issue of commitIssues) {
+        for (const label of issue.labels || []) {
+          if (!allLabels.includes(label)) {
+            allLabels.push(label);
+          }
+        }
+      }
+      groups.set(groupKey, {
+        groupKey,
+        groupType,
+        groupName,
+        commits: [commit],
+        jiraIssues: commitIssues,
+        sprint: commitIssues[0]?.sprint,
+        labels: allLabels,
+      });
+    }
+  }
+
+  // Add ungrouped commits as their own group
+  const result = Array.from(groups.values());
+  if (ungroupedCommits.length > 0) {
+    result.push({
+      groupKey: 'ungrouped',
+      groupType: 'ungrouped',
+      groupName: 'Other Commits',
+      commits: ungroupedCommits,
+      jiraIssues: [],
+      labels: [],
+    });
+  }
+
+  // Sort by number of commits (largest groups first)
+  result.sort((a, b) => b.commits.length - a.commits.length);
+
+  return result;
 }
 
 function createWindow() {
@@ -359,6 +467,124 @@ ipcMain.handle('generate-bullets', async (_event, commitHashes: string[], repoPa
         generatedAt: bullet.generatedAt.toISOString(),
         hasGitHub: false, // TODO: Add bulk GitHub fetching
         hasJira,
+      });
+    }
+
+    return results;
+  } catch (error) {
+    return { error: String(error) };
+  }
+});
+
+// Generate grouped bullets (consolidated by epic/project)
+ipcMain.handle('generate-grouped-bullets', async (_event, commitHashes: string[], repoPath: string) => {
+  try {
+    const allCommits = commitCache.get(repoPath);
+    if (!allCommits) {
+      return { error: 'Repository not loaded' };
+    }
+
+    // Get selected commits
+    const selectedCommits = commitHashes
+      .map(hash => allCommits.find(c => c.hash === hash))
+      .filter((c): c is Commit => c !== undefined);
+
+    const config = getConfig();
+    const ollama = new OllamaProvider({
+      host: config.ollama?.host,
+      model: config.ollama?.model,
+    });
+
+    // Ensure model is available
+    const modelReady = await ollama.ensureModelAvailable((status, completed, total) => {
+      if (mainWindow) {
+        const percent = (completed && total) ? Math.round((completed / total) * 100) : 0;
+        const sizeInfo = (completed && total)
+          ? ` (${Math.round(completed / 1024 / 1024)}MB / ${Math.round(total / 1024 / 1024)}MB)`
+          : '';
+        mainWindow.webContents.send('generation-progress', {
+          current: percent,
+          total: 100,
+          message: `Downloading model: ${status}${sizeInfo}`,
+        });
+      }
+    });
+
+    if (!modelReady) {
+      return { error: `Model ${config.ollama?.model || 'qwen2.5:14b'} could not be downloaded.` };
+    }
+
+    // Bulk fetch JIRA issues
+    let jiraCache = new Map<string, JiraIssue>();
+    if (config.jira?.baseUrl && config.jira?.email && config.jira?.apiToken) {
+      const jiraKeys = extractAllJiraKeys(selectedCommits);
+      if (jiraKeys.length > 0) {
+        if (mainWindow) {
+          mainWindow.webContents.send('generation-progress', {
+            current: 0,
+            total: 100,
+            message: `Fetching ${jiraKeys.length} JIRA tickets...`,
+          });
+        }
+        const jira = new JiraPlugin({
+          baseUrl: config.jira.baseUrl,
+          email: config.jira.email,
+          apiToken: config.jira.apiToken,
+          sprintField: config.jira.sprintField,
+          storyPointsField: config.jira.storyPointsField,
+        });
+        jiraCache = await jira.getIssuesBulk(jiraKeys);
+        console.log('[GROUPED] Fetched JIRA issues:', jiraCache.size);
+      }
+    }
+
+    // Group commits by epic/project
+    const groups = groupCommitsByFeature(selectedCommits, jiraCache);
+    console.log('[GROUPED] Created groups:', groups.map(g => ({
+      key: g.groupKey,
+      name: g.groupName,
+      commits: g.commits.length,
+      issues: g.jiraIssues.length,
+    })));
+
+    // Generate a bullet for each group
+    const results: Array<{
+      groupKey: string;
+      groupName: string;
+      groupType: string;
+      commitCount: number;
+      issueCount: number;
+      text: string;
+      generatedAt: string;
+      commits: Array<{ hash: string; message: string }>;
+      labels: string[];
+      sprint?: string;
+    }> = [];
+
+    for (let i = 0; i < groups.length; i++) {
+      const group = groups[i];
+
+      if (mainWindow) {
+        mainWindow.webContents.send('generation-progress', {
+          current: i + 1,
+          total: groups.length,
+          message: `Generating bullet for "${group.groupName}" (${group.commits.length} commits)...`,
+        });
+      }
+
+      const bullet = await ollama.generateGroupedBullet(group);
+
+      results.push({
+        groupKey: group.groupKey,
+        groupName: group.groupName,
+        groupType: group.groupType,
+        commitCount: group.commits.length,
+        issueCount: group.jiraIssues.length,
+        text: bullet.text,
+        generatedAt: bullet.generatedAt.toISOString(),
+        commits: group.commits.map(c => ({ hash: c.hash, message: c.message.split('\n')[0] })),
+        labels: group.labels,
+        sprint: group.sprint,
       });
     }
 

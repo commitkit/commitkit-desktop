@@ -98,6 +98,26 @@ export interface CVBullet {
   aiModel: string;
 }
 
+// Grouped commits for consolidated bullet generation
+export interface CommitGroup {
+  groupKey: string;           // e.g., "ES1-1234" (epic) or "ES1" (project)
+  groupType: 'epic' | 'project' | 'ungrouped';
+  groupName: string;          // e.g., "AI Assistant Feature" or "ES1 Project"
+  commits: Commit[];
+  jiraIssues: JiraIssue[];    // All unique JIRA issues in this group
+  sprint?: string;            // Most common sprint in the group
+  labels: string[];           // All unique labels across the group
+}
+
+// Grouped bullet output
+export interface GroupedBullet {
+  text: string;
+  group: CommitGroup;
+  generatedAt: Date;
+  aiProvider: string;
+  aiModel: string;
+}
+
 // AI Provider interface
 export interface AIProvider {
   id: string;

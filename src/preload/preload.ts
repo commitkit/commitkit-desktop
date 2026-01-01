@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('commitkit', {
     ipcRenderer.invoke('generate-bullet', commitHash, repoPath),
   generateBullets: (commitHashes: string[], repoPath: string) =>
     ipcRenderer.invoke('generate-bullets', commitHashes, repoPath),
+  generateGroupedBullets: (commitHashes: string[], repoPath: string) =>
+    ipcRenderer.invoke('generate-grouped-bullets', commitHashes, repoPath),
 
   // Ollama status
   checkOllamaStatus: () => ipcRenderer.invoke('check-ollama-status'),
@@ -57,6 +59,7 @@ export interface CommitKitAPI {
   loadCommits: (repoPath: string, options?: { maxCount?: number; branch?: string; author?: string }) => Promise<CommitData[]>;
   generateBullet: (commitHash: string, repoPath: string) => Promise<BulletData>;
   generateBullets: (commitHashes: string[], repoPath: string) => Promise<BulletData[]>;
+  generateGroupedBullets: (commitHashes: string[], repoPath: string) => Promise<GroupedBulletData[]>;
   checkOllamaStatus: () => Promise<{ connected: boolean; model?: string; error?: string }>;
   getOllamaModels: () => Promise<{ installed: string[]; recommended: Array<{ name: string; description: string }>; current: string; error?: string }>;
   getConfig: () => Promise<{ github?: { token: string }; jira?: { baseUrl: string; email: string; apiToken: string }; ollama?: { host?: string; model?: string } }>;
@@ -78,6 +81,19 @@ export interface BulletData {
   text: string;
   commitHash: string;
   generatedAt: string;
+}
+
+export interface GroupedBulletData {
+  groupKey: string;
+  groupName: string;
+  groupType: string;
+  commitCount: number;
+  issueCount: number;
+  text: string;
+  generatedAt: string;
+  commits: Array<{ hash: string; message: string }>;
+  labels: string[];
+  sprint?: string;
 }
 
 declare global {
