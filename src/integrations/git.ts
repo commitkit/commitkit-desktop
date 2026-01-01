@@ -117,14 +117,13 @@ export class GitPlugin implements Plugin {
    */
   async getAuthors(): Promise<Array<{ name: string; email: string }>> {
     try {
-      const log = await this.git.log([this.mainBranch, '--format=%an|%ae']);
+      const log = await this.git.log([this.mainBranch]);
       const seen = new Set<string>();
       const authors: Array<{ name: string; email: string }> = [];
 
       for (const entry of log.all) {
-        // simple-git parses the format string into author_name and author_email
         const key = entry.author_email;
-        if (!seen.has(key)) {
+        if (key && !seen.has(key)) {
           seen.add(key);
           authors.push({
             name: entry.author_name,
