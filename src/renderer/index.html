@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>CommitKit</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 15px 0;
+      border-bottom: 1px solid #333;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: #888;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #666;
+    }
+
+    .status-dot.connected {
+      background: #4ade80;
+    }
+
+    .status-dot.error {
+      background: #ef4444;
+    }
+
+    .repo-section {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .repo-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    .repo-path {
+      font-family: monospace;
+      font-size: 14px;
+      color: #888;
+    }
+
+    button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background: #2563eb;
+    }
+
+    button:disabled {
+      background: #555;
+      cursor: not-allowed;
+    }
+
+    button.secondary {
+      background: #374151;
+    }
+
+    button.secondary:hover {
+      background: #4b5563;
+    }
+
+    .commits-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .commit-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 15px;
+      background: #0f3460;
+      border-radius: 6px;
+      transition: background 0.2s;
+    }
+
+    .commit-item:hover {
+      background: #1a4a7a;
+    }
+
+    .commit-checkbox {
+      margin-top: 3px;
+    }
+
+    .commit-content {
+      flex: 1;
+    }
+
+    .commit-message {
+      font-size: 14px;
+      margin-bottom: 6px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+
+    .commit-meta {
+      display: flex;
+      gap: 15px;
+      font-size: 12px;
+      color: #888;
+    }
+
+    .commit-hash {
+      font-family: monospace;
+    }
+
+    .bullet-section {
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid #333;
+    }
+
+    .bullet-text {
+      font-size: 14px;
+      line-height: 1.5;
+      color: #4ade80;
+      padding: 10px;
+      background: #1a2e1a;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+
+    .bullet-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .bullet-actions button {
+      padding: 5px 12px;
+      font-size: 12px;
+    }
+
+    .actions-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+      padding: 15px;
+      background: #16213e;
+      border-radius: 8px;
+    }
+
+    .selection-info {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      font-size: 14px;
+      color: #888;
+    }
+
+    .progress-bar {
+      height: 4px;
+      background: #333;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 15px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: #3b82f6;
+      width: 0%;
+      transition: width 0.3s;
+    }
+
+    .progress-text {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 10px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #888;
+    }
+
+    .empty-state h2 {
+      font-size: 20px;
+      margin-bottom: 10px;
+      color: #ccc;
+    }
+
+    .empty-state p {
+      margin-bottom: 20px;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #888;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* Modal styles */
+    .modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-content {
+      background: #16213e;
+      border-radius: 12px;
+      width: 500px;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px;
+      border-bottom: 1px solid #333;
+    }
+
+    .modal-header h2 {
+      font-size: 18px;
+      margin: 0;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 24px;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .close-btn:hover {
+      color: #fff;
+    }
+
+    .modal-body {
+      padding: 20px;
+    }
+
+    .modal-footer {
+      padding: 15px 20px;
+      border-top: 1px solid #333;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .settings-section {
+      margin-bottom: 25px;
+    }
+
+    .settings-section h3 {
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+
+    .settings-desc {
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 15px;
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 5px;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 10px 12px;
+      background: #0f3460;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #eee;
+      font-size: 14px;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+
+    .form-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 10px;
+    }
+
+    .status-text {
+      font-size: 13px;
+    }
+
+    .status-text.success {
+      color: #4ade80;
+    }
+
+    .status-text.error {
+      color: #ef4444;
+    }
+
+    /* Enrichment badges */
+    .enrichment-badges {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .badge {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: #333;
+      color: #888;
+    }
+
+    .badge.github {
+      background: #238636;
+      color: #fff;
+    }
+
+    .badge.jira {
+      background: #0052cc;
+      color: #fff;
+    }
+
+    /* Repo dropdown */
+    .repo-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .repo-dropdown {
+      padding: 10px 12px;
+      background: #0f3460;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #eee;
+      font-size: 14px;
+      min-width: 250px;
+      cursor: pointer;
+    }
+
+    .repo-dropdown:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+
+    .repo-dropdown option {
+      background: #0f3460;
+      color: #eee;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>CommitKit</h1>
+      <div style="display: flex; align-items: center; gap: 15px;">
+        <div class="status-indicator" id="ollamaStatus">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Checking Ollama...</span>
+        </div>
+        <button id="settingsBtn" class="secondary" style="padding: 6px 12px;">Settings</button>
+      </div>
+    </header>
+
+    <div class="repo-section">
+      <div class="repo-header">
+        <div>
+          <h3>Repository</h3>
+          <p class="repo-path" id="repoPath">No repository selected</p>
+        </div>
+        <div class="repo-actions">
+          <select id="repoSelect" class="repo-dropdown">
+            <option value="">-- Select saved repo --</option>
+          </select>
+          <button id="addRepoBtn" class="secondary">+ Add</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="emptyState" class="empty-state">
+      <h2>Get started</h2>
+      <p>Add a git repository to load commits and generate CV bullets.</p>
+      <button id="addRepoBtn2">+ Add Repository</button>
+    </div>
+
+    <div id="commitsSection" class="hidden">
+      <div class="actions-bar">
+        <div class="selection-info">
+          <span id="selectionCount">0 commits selected</span>
+        </div>
+        <button id="selectAllBtn" class="secondary">Select All</button>
+        <button id="generateBtn" disabled>Generate Bullets</button>
+      </div>
+
+      <div id="progressContainer" class="hidden">
+        <div class="progress-text" id="progressText">Generating...</div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+      </div>
+
+      <div class="commits-list" id="commitsList">
+        <!-- Commits will be rendered here -->
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Settings</h2>
+          <button id="closeSettingsBtn" class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <!-- GitHub Section -->
+          <div class="settings-section">
+            <h3>GitHub</h3>
+            <p class="settings-desc">Enter a GitHub personal access token to fetch PR data for commits.</p>
+            <div class="form-group">
+              <label>Token</label>
+              <input type="password" id="githubToken" placeholder="ghp_xxxxxxxxxxxx">
+            </div>
+            <div class="form-actions">
+              <span id="githubStatus" class="status-text"></span>
+              <button id="testGithubBtn" class="secondary">Test Connection</button>
+            </div>
+          </div>
+
+          <!-- JIRA Section -->
+          <div class="settings-section">
+            <h3>JIRA</h3>
+            <p class="settings-desc">Enter your Atlassian credentials to fetch ticket data.</p>
+            <div class="form-group">
+              <label>Base URL</label>
+              <input type="text" id="jiraBaseUrl" placeholder="https://company.atlassian.net">
+            </div>
+            <div class="form-group">
+              <label>Email</label>
+              <input type="email" id="jiraEmail" placeholder="you@company.com">
+            </div>
+            <div class="form-group">
+              <label>API Token</label>
+              <input type="password" id="jiraApiToken" placeholder="Your JIRA API token">
+            </div>
+            <div class="form-actions">
+              <span id="jiraStatus" class="status-text"></span>
+              <button id="testJiraBtn" class="secondary">Test Connection</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="saveSettingsBtn">Save Settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

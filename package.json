@@ -1,11 +1,12 @@
 {
   "name": "commitkit-desktop",
+  "productName": "CommitKit",
   "version": "0.1.0",
   "description": "Privacy-first CV bullet generator from git commits",
   "main": "dist/main/main.js",
   "scripts": {
     "start": "npm run build && electron .",
-    "build": "tsc",
+    "build": "tsc && cp src/renderer/index.html dist/renderer/",
     "watch": "tsc -w",
     "test": "jest",
     "test:watch": "jest --watch",
