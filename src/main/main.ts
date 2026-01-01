@@ -230,7 +230,7 @@ ipcMain.handle('generate-bullets', async (_event, commitHashes: string[], repoPa
         mainWindow.webContents.send('generation-progress', {
           current: 0,
           total: commitHashes.length,
-          message: status,
+          message: `Downloading model: ${status}`,
         });
       }
     });
