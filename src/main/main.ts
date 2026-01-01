@@ -344,6 +344,13 @@ ipcMain.handle('generate-bullets', async (_event, commitHashes: string[], repoPa
 
       // Enrich commit with cached JIRA data (no API calls)
       const enrichments = enrichCommitWithCache(commit, jiraCache);
+      const hasJira = !!enrichments['jira'];
+      console.log('[JIRA] Commit enrichment:', {
+        hash: commit.hash.substring(0, 7),
+        message: commit.message.substring(0, 50),
+        hasJira,
+        issueCount: hasJira ? (enrichments['jira']?.data as { issues: unknown[] }).issues.length : 0,
+      });
       const bullet = await ollama.generateCVBullet(commit, enrichments);
 
       results.push({
@@ -351,7 +358,7 @@ ipcMain.handle('generate-bullets', async (_event, commitHashes: string[], repoPa
         commitHash: commit.hash,
         generatedAt: bullet.generatedAt.toISOString(),
         hasGitHub: false, // TODO: Add bulk GitHub fetching
-        hasJira: !!enrichments['jira'],
+        hasJira,
       });
     }
 
