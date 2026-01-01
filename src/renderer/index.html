@@ -428,10 +428,23 @@
       color: #eee;
     }
 
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .filter-group label {
+      font-size: 11px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
     .branch-input,
     .author-select,
-    .count-input {
-      padding: 10px 12px;
+    .count-select {
+      padding: 8px 10px;
       background: #0f3460;
       border: 1px solid #333;
       border-radius: 6px;
@@ -439,34 +452,37 @@
       font-size: 14px;
     }
 
+    .repo-dropdown {
+      min-width: 180px;
+    }
+
     .branch-input {
-      width: 100px;
+      width: 90px;
     }
 
     .author-select {
-      min-width: 150px;
-      max-width: 200px;
+      min-width: 120px;
+      max-width: 180px;
       cursor: pointer;
     }
 
-    .author-select option {
+    .author-select option,
+    .count-select option {
       background: #0f3460;
       color: #eee;
     }
 
-    .count-input {
+    .count-select {
       width: 70px;
+      cursor: pointer;
     }
 
     .branch-input:focus,
     .author-select:focus,
-    .count-input:focus {
+    .count-select:focus,
+    .repo-dropdown:focus {
       outline: none;
       border-color: #3b82f6;
-    }
-
-    .count-input::-webkit-inner-spin-button {
-      opacity: 1;
     }
   </style>
 </head>
@@ -490,14 +506,34 @@
           <p class="repo-path" id="repoPath">No repository selected</p>
         </div>
         <div class="repo-actions">
-          <select id="repoSelect" class="repo-dropdown">
-            <option value="">-- Select saved repo --</option>
-          </select>
-          <input type="text" id="branchInput" class="branch-input" placeholder="main" value="main" title="Branch">
-          <select id="authorSelect" class="author-select" title="Filter by author">
-            <option value="">All authors</option>
-          </select>
-          <input type="number" id="maxCountInput" class="count-input" placeholder="50" value="50" min="1" max="500" title="Max commits">
+          <div class="filter-group">
+            <label for="repoSelect">Repo</label>
+            <select id="repoSelect" class="repo-dropdown">
+              <option value="">-- Select --</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="branchInput">Branch</label>
+            <input type="text" id="branchInput" class="branch-input" placeholder="main" value="main">
+          </div>
+          <div class="filter-group">
+            <label for="authorSelect">Author</label>
+            <select id="authorSelect" class="author-select">
+              <option value="">All</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="maxCountSelect">Limit</label>
+            <select id="maxCountSelect" class="count-select">
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+              <option value="250">250</option>
+              <option value="500">500</option>
+              <option value="">All</option>
+            </select>
+          </div>
           <button id="addRepoBtn" class="secondary">+ Add</button>
         </div>
       </div>

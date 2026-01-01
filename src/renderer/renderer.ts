@@ -43,7 +43,7 @@ interface SavedRepo {
 const repoSelect = document.getElementById('repoSelect') as HTMLSelectElement;
 const branchInput = document.getElementById('branchInput') as HTMLInputElement;
 const authorSelect = document.getElementById('authorSelect') as HTMLSelectElement;
-const maxCountInput = document.getElementById('maxCountInput') as HTMLInputElement;
+const maxCountSelect = document.getElementById('maxCountSelect') as HTMLSelectElement;
 const addRepoBtn = document.getElementById('addRepoBtn') as HTMLButtonElement;
 const addRepoBtn2 = document.getElementById('addRepoBtn2') as HTMLButtonElement;
 const repoPath = document.getElementById('repoPath') as HTMLElement;
@@ -85,7 +85,7 @@ async function init() {
   repoSelect.addEventListener('change', onRepoSelected);
   branchInput.addEventListener('change', onBranchChanged);
   authorSelect.addEventListener('change', onFiltersChanged);
-  maxCountInput.addEventListener('change', onFiltersChanged);
+  maxCountSelect.addEventListener('change', onFiltersChanged);
   addRepoBtn.addEventListener('click', addRepository);
   addRepoBtn2.addEventListener('click', addRepository);
   selectAllBtn.addEventListener('click', toggleSelectAll);
@@ -219,7 +219,8 @@ async function loadCommits() {
 
   const branch = branchInput.value.trim() || 'main';
   const author = authorSelect.value || undefined;
-  const maxCount = parseInt(maxCountInput.value, 10) || 50;
+  const maxCountValue = maxCountSelect.value;
+  const maxCount = maxCountValue ? parseInt(maxCountValue, 10) : undefined;
   const result = await window.commitkit.loadCommits(currentRepoPath, { maxCount, branch, author }) as LoadCommitsResult;
 
   if (Array.isArray(result)) {
@@ -293,10 +294,11 @@ function toggleSelectAll() {
 }
 
 function updateSelectionCount() {
-  const count = selectedCommits.size;
-  selectionCount.textContent = `${count} commit${count !== 1 ? 's' : ''} selected`;
-  generateBtn.disabled = count === 0;
-  selectAllBtn.textContent = selectedCommits.size === commits.length ? 'Deselect All' : 'Select All';
+  const selected = selectedCommits.size;
+  const total = commits.length;
+  selectionCount.textContent = `${total} loaded, ${selected} selected`;
+  generateBtn.disabled = selected === 0;
+  selectAllBtn.textContent = selected === total ? 'Deselect All' : 'Select All';
 }
 
 async function generateBullets() {
