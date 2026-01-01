@@ -158,7 +158,7 @@ ipcMain.handle('load-commits', async (_event, repoPath: string, options?: { maxC
   try {
     const git = new GitPlugin(repoPath, options?.branch || 'main');
     const commits = await git.getCommits({
-      maxCount: options?.maxCount || 50,
+      maxCount: options?.maxCount,
       author: options?.author,
     });
 
