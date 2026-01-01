@@ -252,8 +252,8 @@ ipcMain.handle('remove-repository', (_event, repoPath: string) => {
   return { success: true };
 });
 
-// Update repo settings (branch, author)
-ipcMain.handle('update-repo-settings', (_event, repoPath: string, settings: { branch?: string; author?: string }) => {
+// Update repo settings (branch, author, maxCount)
+ipcMain.handle('update-repo-settings', (_event, repoPath: string, settings: { branch?: string; author?: string; maxCount?: string }) => {
   const updated = updateRepoSettings(repoPath, settings);
   return updated ? { success: true, repo: updated } : { success: false, error: 'Repository not found' };
 });

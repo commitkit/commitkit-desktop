@@ -55,6 +55,7 @@ interface SavedRepo {
   addedAt: string;
   branch?: string;
   author?: string;
+  maxCount?: string;
 }
 
 // DOM Elements
@@ -169,13 +170,17 @@ async function onRepoSelected() {
   currentRepoPath = selectedPath;
   repoPath.textContent = selectedPath;
 
-  // Load saved repo settings (branch, author)
+  // Load saved repo settings (branch, author, maxCount)
   const settings = await window.commitkit.getRepoSettings(selectedPath);
   if (settings) {
     if (settings.branch) {
       branchInput.value = settings.branch;
     } else {
       branchInput.value = 'main'; // Default
+    }
+    // Set saved limit (maxCount)
+    if (settings.maxCount !== undefined) {
+      maxCountSelect.value = settings.maxCount;
     }
   }
 
@@ -206,9 +211,10 @@ async function onBranchChanged() {
 async function onFiltersChanged() {
   if (!currentRepoPath) return;
 
-  // Save author filter setting
+  // Save author and maxCount filter settings
   const author = authorSelect.value || undefined;
-  await window.commitkit.updateRepoSettings(currentRepoPath, { author });
+  const maxCount = maxCountSelect.value;
+  await window.commitkit.updateRepoSettings(currentRepoPath, { author, maxCount });
 
   // Clear existing bullets and selection when filters change
   bullets.clear();

@@ -15,6 +15,7 @@ export interface SavedRepo {
   addedAt: string;
   branch?: string;  // Last used branch
   author?: string;  // Last used author filter (email)
+  maxCount?: string;  // Last used limit ("" for All, or number as string)
 }
 
 export interface AppConfig {
@@ -101,7 +102,7 @@ export function removeRepo(repoPath: string): void {
   saveConfig({ ...config, repositories: filtered });
 }
 
-export function updateRepoSettings(repoPath: string, settings: { branch?: string; author?: string }): SavedRepo | null {
+export function updateRepoSettings(repoPath: string, settings: { branch?: string; author?: string; maxCount?: string }): SavedRepo | null {
   const config = getConfig();
   const repos = config.repositories || [];
   const repoIndex = repos.findIndex(r => r.path === repoPath);
