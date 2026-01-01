@@ -10,7 +10,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "evals": "evalite",
-    "evals:watch": "evalite --watch"
+    "evals:watch": "evalite --watch",
+    "evals:simple": "npx ts-node evals/run-evals.ts"
   },
   "author": "Richie Thomas",
   "license": "MIT",
@@ -23,6 +24,7 @@
     "evalite": "^0.19.0",
     "jest": "^29.7.0",
     "ts-jest": "^29.2.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.6.0",
     "vitest": "^2.1.9"
   },

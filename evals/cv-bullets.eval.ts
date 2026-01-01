@@ -36,6 +36,9 @@ import { Ollama } from 'ollama';
 
 const ollama = new Ollama({ host: 'http://localhost:11434' });
 
+// Use OLLAMA_MODEL env var or default to llama3.2
+const MODEL = process.env.OLLAMA_MODEL || 'llama3.2';
+
 evalite('CV Bullet Quality', {
   data: async () => [
     {
@@ -64,7 +67,7 @@ Commit: ${input}
 Generate only the bullet point, nothing else:`;
 
     const response = await ollama.generate({
-      model: 'llama3.2',
+      model: MODEL,
       prompt,
       options: { temperature: 0.7 },
     });
