@@ -250,16 +250,17 @@ Generate only the bullet point text, nothing else:`);
 
   /**
    * Build prompt for generating a consolidated bullet from multiple commits
+   * Uses STAR format (Situation, Task, Action, Result placeholder)
    */
   buildGroupedPrompt(group: CommitGroup): string {
     const parts: string[] = [];
 
-    // Base instruction for grouped bullets
-    parts.push(`You are summarizing a software engineering project/feature for a CV/resume.
+    // Base instruction for grouped bullets in STAR format
+    parts.push(`You are summarizing a software engineering project/feature for a CV/resume using the STAR format.
 
 CONTEXT:
 - ${group.commits.length} commits over this feature/project
-- Group: ${group.groupName} (${group.groupType})
+- Epic: ${group.groupName}
 ${group.sprint ? `- Sprint: ${group.sprint}` : ''}
 ${group.labels.length > 0 ? `- Labels: ${group.labels.join(', ')}` : ''}
 
@@ -271,7 +272,7 @@ JIRA TICKETS IN THIS FEATURE:`);
       parts.push(`
 - ${issue.key}: ${issue.summary}
   Type: ${issue.issueType}${issue.description ? `
-  Description: ${issue.description.substring(0, 200)}...` : ''}`);
+  Description: ${issue.description.substring(0, 300)}` : ''}`);
     }
     if (group.jiraIssues.length > 10) {
       parts.push(`\n... and ${group.jiraIssues.length - 10} more tickets`);
@@ -289,22 +290,36 @@ JIRA TICKETS IN THIS FEATURE:`);
 
     parts.push(`
 
+OUTPUT FORMAT - Generate a STAR format summary with these exact labels:
+
+**Situation:** [1-2 sentences describing the business problem, user need, or opportunity that prompted this work. What was the context?]
+
+**Task:** [1 sentence describing your specific responsibility or goal. What were you asked to do?]
+
+**Action:** [2-3 sentences describing what you actually built/implemented. Be specific about technologies, architecture decisions, and scope. Use past tense action verbs.]
+
+**Result:** [Leave this as a placeholder for the user to fill in with metrics]
+
 STRICT RULES:
-1. Generate exactly ONE professional CV bullet point summarizing the ENTIRE feature/project
-2. Start with a strong past-tense action verb (Designed, Implemented, Developed, Built, Led, etc.)
-3. Maximum 30 words - capture the essence, not every detail
-4. Focus on the OVERALL accomplishment and business value
-5. NEVER invent metrics or impact claims not evident from the tickets
-6. Do NOT list individual tasks - synthesize into one cohesive achievement
-7. Use natural, professional language suitable for a senior engineer's resume
+1. Use ONLY information from the JIRA tickets and commit messages - do NOT invent details
+2. Focus on the OVERALL accomplishment, not individual tickets
+3. Situation should explain WHY this work was needed (infer from ticket descriptions)
+4. Task should be YOUR specific responsibility (what you owned)
+5. Action should highlight technical accomplishments (technologies, scale, complexity)
+6. For Result, ALWAYS output exactly: "[Add metrics: e.g., reduced X by Y%, improved Z for N users]"
+7. Use professional language suitable for a senior engineer's resume
+8. Do NOT include ticket numbers in the output
 
-GOOD EXAMPLE:
-"Designed and implemented a comprehensive find-and-replace system enabling content administrators to bulk-update text across enterprise learning materials with full audit history."
+EXAMPLE OUTPUT:
+**Situation:** Content administrators needed to update terminology across thousands of learning materials manually, a process that took hours per change and was prone to human error.
 
-BAD EXAMPLE (too detailed):
-"Added find-and-replace for DocumentObjectTextarea, CourseSection, SimpleTest, SurveyTest, VideoTest, and 15 other content types with history tracking."
+**Task:** Design and implement an enterprise-scale find-and-replace system for the learning management platform.
 
-Generate only the bullet point text, nothing else:`);
+**Action:** Built a comprehensive search service supporting 15+ content types with real-time progress tracking. Implemented authorization policies, audit history, and a user-friendly frontend with batch selection and status indicators.
+
+**Result:** [Add metrics: e.g., reduced content update time by 95%, enabled updates across 10,000+ documents]
+
+Generate the STAR format summary now:`);
 
     return parts.join('\n');
   }

@@ -398,6 +398,68 @@ function updateGenerateButtonText() {
   }
 }
 
+/**
+ * Parse STAR format text into sections
+ */
+function parseStarFormat(text: string): { situation?: string; task?: string; action?: string; result?: string } | null {
+  const situationMatch = text.match(/\*\*Situation:\*\*\s*([\s\S]*?)(?=\*\*Task:|\*\*Action:|\*\*Result:|$)/i);
+  const taskMatch = text.match(/\*\*Task:\*\*\s*([\s\S]*?)(?=\*\*Situation:|\*\*Action:|\*\*Result:|$)/i);
+  const actionMatch = text.match(/\*\*Action:\*\*\s*([\s\S]*?)(?=\*\*Situation:|\*\*Task:|\*\*Result:|$)/i);
+  const resultMatch = text.match(/\*\*Result:\*\*\s*([\s\S]*?)$/i);
+
+  if (!situationMatch && !taskMatch && !actionMatch) {
+    return null; // Not STAR format
+  }
+
+  return {
+    situation: situationMatch?.[1]?.trim(),
+    task: taskMatch?.[1]?.trim(),
+    action: actionMatch?.[1]?.trim(),
+    result: resultMatch?.[1]?.trim(),
+  };
+}
+
+/**
+ * Render STAR format text with styled sections
+ */
+function renderStarText(text: string): string {
+  const star = parseStarFormat(text);
+
+  if (!star) {
+    // Not STAR format, render as plain text
+    return `<div style="color: #10b981; font-size: 14px; line-height: 1.5;">${escapeHtml(text)}</div>`;
+  }
+
+  return `
+    <div class="star-format" style="font-size: 14px; line-height: 1.6;">
+      ${star.situation ? `
+        <div style="margin-bottom: 12px;">
+          <span style="color: #f59e0b; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Situation</span>
+          <div style="color: #d1d5db; margin-top: 4px;">${escapeHtml(star.situation)}</div>
+        </div>
+      ` : ''}
+      ${star.task ? `
+        <div style="margin-bottom: 12px;">
+          <span style="color: #3b82f6; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Task</span>
+          <div style="color: #d1d5db; margin-top: 4px;">${escapeHtml(star.task)}</div>
+        </div>
+      ` : ''}
+      ${star.action ? `
+        <div style="margin-bottom: 12px;">
+          <span style="color: #10b981; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Action</span>
+          <div style="color: #d1d5db; margin-top: 4px;">${escapeHtml(star.action)}</div>
+        </div>
+      ` : ''}
+      ${star.result ? `
+        <div>
+          <span style="color: #8b5cf6; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Result</span>
+          <div style="color: #9ca3af; margin-top: 4px; font-style: italic;">${escapeHtml(star.result)}</div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
 function renderGroupedBullets() {
   if (!groupedBulletsContainer) return;
 
@@ -413,7 +475,7 @@ function renderGroupedBullets() {
 
   groupedBulletsContainer.innerHTML = `
     ${epicGroups.length > 0 ? `
-      <h3 style="margin-bottom: 16px; color: #f0f0f0;">Feature Bullets (${epicGroups.length} epics)</h3>
+      <h3 style="margin-bottom: 16px; color: #f0f0f0;">Feature Bullets (${epicGroups.length} epics) - STAR Format</h3>
       ${epicGroups.map((group, index) => `
         <div class="grouped-bullet-item" style="background: #2a2a2a; border-radius: 8px; padding: 16px; margin-bottom: 12px; border-left: 3px solid #8b5cf6;">
           <div class="group-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
@@ -431,8 +493,8 @@ function renderGroupedBullets() {
               ${group.labels.length > 3 ? `<span style="color: #888; font-size: 11px; margin-left: 4px;">+${group.labels.length - 3} more</span>` : ''}
             </div>
           </div>
-          <div class="bullet-text" style="background: #1a1a1a; padding: 12px; border-radius: 6px; color: #10b981; font-size: 14px; line-height: 1.5; margin-bottom: 12px;">
-            ${escapeHtml(group.text)}
+          <div class="bullet-text" style="background: #1a1a1a; padding: 16px; border-radius: 6px; margin-bottom: 12px;">
+            ${renderStarText(group.text)}
           </div>
           <div class="bullet-actions" style="display: flex; gap: 8px;">
             <button data-copy-group="${index}" style="background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Copy</button>
