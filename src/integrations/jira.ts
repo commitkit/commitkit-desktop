@@ -95,19 +95,84 @@ export class JiraPlugin implements Plugin {
         { headers: this.getHeaders() }
       );
 
-      const { fields } = response.data;
+      return this.parseIssue(response.data);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Fetch multiple JIRA issues in a single API call using JQL search
+   * Much more efficient than fetching one at a time
+   */
+  async getIssuesBulk(keys: string[]): Promise<Map<string, JiraIssue>> {
+    const results = new Map<string, JiraIssue>();
+    if (keys.length === 0) return results;
+
+    // JQL has a limit, so batch in chunks of 50
+    const batchSize = 50;
+    for (let i = 0; i < keys.length; i += batchSize) {
+      const batch = keys.slice(i, i + batchSize);
+      const jql = `key in (${batch.join(',')})`;
+
+      try {
+        const response = await axios.post(
+          `${this.config.baseUrl}/rest/api/3/search`,
+          {
+            jql,
+            maxResults: batchSize,
+            fields: [
+              'summary',
+              'issuetype',
+              'status',
+              'priority',
+              'labels',
+              'parent',
+              this.sprintField,
+              this.storyPointsField,
+            ],
+          },
+          { headers: this.getHeaders() }
+        );
+
+        for (const issueData of response.data.issues || []) {
+          const issue = this.parseIssue(issueData);
+          if (issue) {
+            results.set(issue.key, issue);
+          }
+        }
+      } catch (error) {
+        console.error('JIRA bulk fetch error:', error);
+        // Continue with other batches
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Parse JIRA API response into JiraIssue
+   */
+  private parseIssue(data: { key: string; fields: Record<string, unknown> }): JiraIssue | null {
+    try {
+      const { fields } = data;
+      const parent = fields.parent as { key?: string; fields?: { summary?: string } } | undefined;
+      const issuetype = fields.issuetype as { name?: string } | undefined;
+      const status = fields.status as { name?: string } | undefined;
+      const priority = fields.priority as { name?: string } | undefined;
+      const sprintData = fields[this.sprintField] as { name?: string } | undefined;
 
       return {
-        key: response.data.key,
-        summary: fields.summary,
-        issueType: fields.issuetype?.name,
-        status: fields.status?.name,
-        priority: fields.priority?.name,
-        labels: fields.labels || [],
-        sprint: fields[this.sprintField]?.name,
-        storyPoints: fields[this.storyPointsField],
-        epicKey: fields.parent?.key,
-        epicName: fields.parent?.fields?.summary,
+        key: data.key,
+        summary: fields.summary as string || '',
+        issueType: issuetype?.name || 'Unknown',
+        status: status?.name || 'Unknown',
+        priority: priority?.name,
+        labels: (fields.labels as string[]) || [],
+        sprint: sprintData?.name,
+        storyPoints: fields[this.storyPointsField] as number | undefined,
+        epicKey: parent?.key,
+        epicName: parent?.fields?.summary,
       };
     } catch {
       return null;

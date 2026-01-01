@@ -65,6 +65,53 @@ async function enrichCommit(commit: Commit): Promise<EnrichmentContext> {
   return enrichments;
 }
 
+// JIRA ticket key regex
+const JIRA_KEY_REGEX = /\b([A-Z][A-Z0-9]+-\d+)\b/gi;
+
+/**
+ * Extract all unique JIRA ticket keys from commits
+ */
+function extractAllJiraKeys(commits: Commit[]): string[] {
+  const keys = new Set<string>();
+  for (const commit of commits) {
+    const matches = commit.message.match(JIRA_KEY_REGEX);
+    if (matches) {
+      matches.forEach(m => keys.add(m.toUpperCase()));
+    }
+  }
+  return Array.from(keys);
+}
+
+/**
+ * Enrich a commit using pre-fetched JIRA data (for bulk operations)
+ */
+function enrichCommitWithCache(
+  commit: Commit,
+  jiraCache: Map<string, import('../types').JiraIssue>
+): EnrichmentContext {
+  const enrichments: EnrichmentContext = {};
+
+  // Check for JIRA tickets in commit message
+  const matches = commit.message.match(JIRA_KEY_REGEX);
+  if (matches && jiraCache.size > 0) {
+    const issues: import('../types').JiraIssue[] = [];
+    for (const match of matches) {
+      const issue = jiraCache.get(match.toUpperCase());
+      if (issue) {
+        issues.push(issue);
+      }
+    }
+    if (issues.length > 0) {
+      enrichments['jira'] = {
+        pluginId: 'jira',
+        data: { issues },
+      };
+    }
+  }
+
+  return enrichments;
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -213,10 +260,15 @@ ipcMain.handle('generate-bullet', async (_event, commitHash: string, repoPath: s
 // Generate bullets for multiple commits
 ipcMain.handle('generate-bullets', async (_event, commitHashes: string[], repoPath: string) => {
   try {
-    const commits = commitCache.get(repoPath);
-    if (!commits) {
+    const allCommits = commitCache.get(repoPath);
+    if (!allCommits) {
       return { error: 'Repository not loaded' };
     }
+
+    // Get selected commits
+    const selectedCommits = commitHashes
+      .map(hash => allCommits.find(c => c.hash === hash))
+      .filter((c): c is Commit => c !== undefined);
 
     const config = getConfig();
     const ollama = new OllamaProvider({
@@ -244,32 +296,52 @@ ipcMain.handle('generate-bullets', async (_event, commitHashes: string[], repoPa
       return { error: `Model ${config.ollama?.model || 'qwen2.5:14b'} could not be downloaded. Please run: ollama pull ${config.ollama?.model || 'qwen2.5:14b'}` };
     }
 
+    // Bulk fetch JIRA issues (one API call for all tickets)
+    let jiraCache = new Map<string, import('../types').JiraIssue>();
+    if (config.jira?.baseUrl && config.jira?.email && config.jira?.apiToken) {
+      const jiraKeys = extractAllJiraKeys(selectedCommits);
+      if (jiraKeys.length > 0) {
+        if (mainWindow) {
+          mainWindow.webContents.send('generation-progress', {
+            current: 0,
+            total: commitHashes.length,
+            message: `Fetching ${jiraKeys.length} JIRA tickets...`,
+          });
+        }
+        const jira = new JiraPlugin({
+          baseUrl: config.jira.baseUrl,
+          email: config.jira.email,
+          apiToken: config.jira.apiToken,
+          sprintField: config.jira.sprintField,
+          storyPointsField: config.jira.storyPointsField,
+        });
+        jiraCache = await jira.getIssuesBulk(jiraKeys);
+      }
+    }
+
     const results: Array<{ text: string; commitHash: string; generatedAt: string; hasGitHub?: boolean; hasJira?: boolean }> = [];
 
-    for (let i = 0; i < commitHashes.length; i++) {
-      const hash = commitHashes[i];
-      const commit = commits.find(c => c.hash === hash);
-
-      if (!commit) continue;
+    for (let i = 0; i < selectedCommits.length; i++) {
+      const commit = selectedCommits[i];
 
       // Send progress update
       if (mainWindow) {
         mainWindow.webContents.send('generation-progress', {
           current: i + 1,
-          total: commitHashes.length,
-          message: `Generating bullet ${i + 1} of ${commitHashes.length}...`,
+          total: selectedCommits.length,
+          message: `Generating bullet ${i + 1} of ${selectedCommits.length}...`,
         });
       }
 
-      // Enrich commit with GitHub/JIRA data
-      const enrichments = await enrichCommit(commit);
+      // Enrich commit with cached JIRA data (no API calls)
+      const enrichments = enrichCommitWithCache(commit, jiraCache);
       const bullet = await ollama.generateCVBullet(commit, enrichments);
 
       results.push({
         text: bullet.text,
         commitHash: commit.hash,
         generatedAt: bullet.generatedAt.toISOString(),
-        hasGitHub: !!enrichments['github'],
+        hasGitHub: false, // TODO: Add bulk GitHub fetching
         hasJira: !!enrichments['jira'],
       });
     }
