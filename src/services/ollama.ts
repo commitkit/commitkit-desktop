@@ -69,6 +69,40 @@ export class OllamaProvider implements AIProvider {
   }
 
   /**
+   * Pull the model from Ollama registry
+   */
+  async pullModel(onProgress?: (status: string) => void): Promise<boolean> {
+    try {
+      const stream = await this.client.pull({ model: this.model, stream: true });
+      for await (const progress of stream) {
+        if (onProgress && progress.status) {
+          onProgress(progress.status);
+        }
+      }
+      return true;
+    } catch (error) {
+      console.error('Failed to pull model:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Ensure model is available, pulling if necessary
+   */
+  async ensureModelAvailable(onProgress?: (status: string) => void): Promise<boolean> {
+    const available = await this.isModelAvailable();
+    if (available) {
+      return true;
+    }
+
+    // Try to pull the model
+    if (onProgress) {
+      onProgress(`Downloading ${this.model}...`);
+    }
+    return await this.pullModel(onProgress);
+  }
+
+  /**
    * Generate a CV bullet from a commit and its enrichment data
    */
   async generateCVBullet(

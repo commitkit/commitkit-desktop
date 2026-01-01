@@ -224,6 +224,21 @@ ipcMain.handle('generate-bullets', async (_event, commitHashes: string[], repoPa
       model: config.ollama?.model,
     });
 
+    // Ensure model is available, pull if needed
+    const modelReady = await ollama.ensureModelAvailable((status) => {
+      if (mainWindow) {
+        mainWindow.webContents.send('generation-progress', {
+          current: 0,
+          total: commitHashes.length,
+          message: status,
+        });
+      }
+    });
+
+    if (!modelReady) {
+      return { error: `Model ${config.ollama?.model || 'qwen2.5:14b'} could not be downloaded. Please run: ollama pull ${config.ollama?.model || 'qwen2.5:14b'}` };
+    }
+
     const results: Array<{ text: string; commitHash: string; generatedAt: string; hasGitHub?: boolean; hasJira?: boolean }> = [];
 
     for (let i = 0; i < commitHashes.length; i++) {
