@@ -29,7 +29,11 @@ export class JiraPlugin implements Plugin {
   private ticketKeyRegex = /\b([A-Z][A-Z0-9]+-\d+)\b/gi;
 
   constructor(config: JiraConfig) {
-    this.config = config;
+    // Normalize baseUrl to remove trailing slash
+    this.config = {
+      ...config,
+      baseUrl: config.baseUrl.replace(/\/+$/, ''),
+    };
     this.sprintField = config.sprintField || 'customfield_10001';
     this.storyPointsField = config.storyPointsField || 'customfield_10002';
   }
