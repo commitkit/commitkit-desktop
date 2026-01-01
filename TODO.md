@@ -20,6 +20,19 @@
 
 ---
 
+## UI/UX Redesign
+
+### 4. Comprehensive Theme & Look-and-Feel Refresh
+- [ ] Move away from dark purple theme
+- [ ] Evaluate: Light + Indigo/Blue (professional, modern, trustworthy)
+- [ ] Review typography, spacing, and visual hierarchy
+- [ ] Consider light mode as default (easier to read for resume work)
+- [ ] Ensure consistency across all components (modals, buttons, inputs)
+- [ ] Add visual polish: shadows, transitions, hover states
+- [ ] Reference: GitHub, Linear, Notion for inspiration
+
+---
+
 ## Other Ideas (add as they come up)
 
 - [ ] Export all bullets to markdown/text file
