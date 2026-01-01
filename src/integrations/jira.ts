@@ -121,7 +121,7 @@ export class JiraPlugin implements Plugin {
 
       try {
         const response = await axios.post(
-          `${this.config.baseUrl}/rest/api/3/search`,
+          `${this.config.baseUrl}/rest/api/3/search/jql`,
           {
             jql,
             maxResults: batchSize,
