@@ -427,6 +427,21 @@
       background: #0f3460;
       color: #eee;
     }
+
+    .branch-input {
+      padding: 10px 12px;
+      background: #0f3460;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #eee;
+      font-size: 14px;
+      width: 120px;
+    }
+
+    .branch-input:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
   </style>
 </head>
 <body>
@@ -452,6 +467,7 @@
           <select id="repoSelect" class="repo-dropdown">
             <option value="">-- Select saved repo --</option>
           </select>
+          <input type="text" id="branchInput" class="branch-input" placeholder="main" value="main">
           <button id="addRepoBtn" class="secondary">+ Add</button>
         </div>
       </div>

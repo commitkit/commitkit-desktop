@@ -144,9 +144,9 @@ ipcMain.handle('select-repository', async () => {
 });
 
 // Load commits from a repository
-ipcMain.handle('load-commits', async (_event, repoPath: string, options?: { maxCount?: number }) => {
+ipcMain.handle('load-commits', async (_event, repoPath: string, options?: { maxCount?: number; branch?: string }) => {
   try {
-    const git = new GitPlugin(repoPath);
+    const git = new GitPlugin(repoPath, options?.branch || 'main');
     const commits = await git.getCommits({
       maxCount: options?.maxCount || 50,
     });
