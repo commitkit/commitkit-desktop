@@ -12,6 +12,7 @@ import { JiraPlugin } from '../integrations/jira';
 import { OllamaProvider } from '../services/ollama';
 import { getConfig, updateConfig, AppConfig, getSavedRepos, addRepo, removeRepo, updateRepoSettings, getRepoSettings } from '../services/config';
 import { Commit, EnrichmentContext, JiraIssue, CommitGroup } from '../types';
+import { groupCommitsByFeature } from '../utils/grouping';
 
 // Set app name for macOS menu bar
 app.setName('CommitKit');
@@ -110,90 +111,6 @@ function enrichCommitWithCache(
   }
 
   return enrichments;
-}
-
-/**
- * Group commits by epic only (hybrid approach)
- * Commits without epics are returned separately for individual bullet generation
- */
-function groupCommitsByFeature(
-  commits: Commit[],
-  jiraCache: Map<string, JiraIssue>
-): { groups: CommitGroup[]; ungroupedCommits: Array<{ commit: Commit; issues: JiraIssue[] }> } {
-  const groups = new Map<string, CommitGroup>();
-  const ungroupedCommits: Array<{ commit: Commit; issues: JiraIssue[] }> = [];
-
-  for (const commit of commits) {
-    const matches = commit.message.match(JIRA_KEY_REGEX);
-
-    // Collect all JIRA issues for this commit
-    const commitIssues: JiraIssue[] = [];
-    let epicKey: string | null = null;
-    let epicName = '';
-
-    if (matches) {
-      for (const match of matches) {
-        const issue = jiraCache.get(match.toUpperCase());
-        if (issue) {
-          commitIssues.push(issue);
-          // Find epic if available
-          if (issue.epicKey && !epicKey) {
-            epicKey = issue.epicKey;
-            epicName = issue.epicName || issue.epicKey;
-          }
-        }
-      }
-    }
-
-    // Only group if we have an epic
-    if (epicKey) {
-      if (groups.has(epicKey)) {
-        const group = groups.get(epicKey)!;
-        group.commits.push(commit);
-        // Add unique issues
-        for (const issue of commitIssues) {
-          if (!group.jiraIssues.find(i => i.key === issue.key)) {
-            group.jiraIssues.push(issue);
-          }
-        }
-        // Merge labels
-        for (const issue of commitIssues) {
-          for (const label of issue.labels || []) {
-            if (!group.labels.includes(label)) {
-              group.labels.push(label);
-            }
-          }
-        }
-      } else {
-        const allLabels: string[] = [];
-        for (const issue of commitIssues) {
-          for (const label of issue.labels || []) {
-            if (!allLabels.includes(label)) {
-              allLabels.push(label);
-            }
-          }
-        }
-        groups.set(epicKey, {
-          groupKey: epicKey,
-          groupType: 'epic',
-          groupName: epicName,
-          commits: [commit],
-          jiraIssues: commitIssues,
-          sprint: commitIssues[0]?.sprint,
-          labels: allLabels,
-        });
-      }
-    } else {
-      // No epic - will generate individual bullet
-      ungroupedCommits.push({ commit, issues: commitIssues });
-    }
-  }
-
-  // Sort groups by number of commits (largest first)
-  const sortedGroups = Array.from(groups.values());
-  sortedGroups.sort((a, b) => b.commits.length - a.commits.length);
-
-  return { groups: sortedGroups, ungroupedCommits };
 }
 
 function createWindow() {
@@ -464,7 +381,7 @@ ipcMain.handle('generate-bullets', async (_event, commitHashes: string[], repoPa
 });
 
 // Generate grouped bullets (consolidated by epic/project)
-ipcMain.handle('generate-grouped-bullets', async (_event, commitHashes: string[], repoPath: string) => {
+ipcMain.handle('generate-grouped-bullets', async (_event, commitHashes: string[], repoPath: string, groupOverrides?: Record<string, string | null>) => {
   try {
     const allCommits = commitCache.get(repoPath);
     if (!allCommits) {
@@ -525,8 +442,8 @@ ipcMain.handle('generate-grouped-bullets', async (_event, commitHashes: string[]
       }
     }
 
-    // Group commits by epic (hybrid approach)
-    const { groups, ungroupedCommits } = groupCommitsByFeature(selectedCommits, jiraCache);
+    // Group commits by epic (hybrid approach), respecting user overrides
+    const { groups, ungroupedCommits } = groupCommitsByFeature(selectedCommits, jiraCache, groupOverrides);
     console.log('[GROUPED] Created groups:', groups.map(g => ({
       key: g.groupKey,
       name: g.groupName,

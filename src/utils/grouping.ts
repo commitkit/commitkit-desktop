@@ -23,13 +23,34 @@ export function extractJiraKeys(message: string): string[] {
  * Group commits by epic (hybrid approach)
  * - Commits with epics → grouped into feature groups
  * - Commits without epics → returned as ungrouped for individual bullets
+ *
+ * @param groupOverrides - Optional user overrides: commit hash → group key (or null for no group)
  */
 export function groupCommitsByFeature(
   commits: Commit[],
-  jiraCache: Map<string, JiraIssue>
+  jiraCache: Map<string, JiraIssue>,
+  groupOverrides?: Record<string, string | null>
 ): { groups: CommitGroup[]; ungroupedCommits: Array<{ commit: Commit; issues: JiraIssue[] }> } {
   const groups = new Map<string, CommitGroup>();
   const ungroupedCommits: Array<{ commit: Commit; issues: JiraIssue[] }> = [];
+
+  // First pass: collect epic info for all potential groups (needed for override targets)
+  const epicInfo = new Map<string, { epicKey: string; epicName: string }>();
+
+  for (const commit of commits) {
+    const matches = commit.message.match(JIRA_KEY_REGEX);
+    if (matches) {
+      for (const match of matches) {
+        const issue = jiraCache.get(match.toUpperCase());
+        if (issue?.epicKey && !epicInfo.has(issue.epicKey)) {
+          epicInfo.set(issue.epicKey, {
+            epicKey: issue.epicKey,
+            epicName: issue.epicName || issue.epicKey,
+          });
+        }
+      }
+    }
+  }
 
   for (const commit of commits) {
     const matches = commit.message.match(JIRA_KEY_REGEX);
@@ -50,6 +71,20 @@ export function groupCommitsByFeature(
             epicName = issue.epicName || issue.epicKey;
           }
         }
+      }
+    }
+
+    // Check for user override
+    if (groupOverrides && commit.hash in groupOverrides) {
+      const overrideKey = groupOverrides[commit.hash];
+      if (overrideKey === null) {
+        // Explicitly set to no group
+        ungroupedCommits.push({ commit, issues: commitIssues });
+        continue;
+      } else {
+        // Override to a specific group
+        epicKey = overrideKey;
+        epicName = epicInfo.get(overrideKey)?.epicName || overrideKey;
       }
     }
 

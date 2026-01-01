@@ -519,6 +519,136 @@
       outline: none;
       border-color: #3b82f6;
     }
+
+    /* Expandable commit rows */
+    .commit-row-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      cursor: pointer;
+    }
+
+    .expand-chevron {
+      color: #666;
+      font-size: 12px;
+      margin-top: 4px;
+      transition: transform 0.2s;
+      user-select: none;
+    }
+
+    .expand-chevron.expanded {
+      transform: rotate(90deg);
+    }
+
+    .commit-main {
+      flex: 1;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .group-pill {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #374151;
+      color: #9ca3af;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .group-pill.has-group {
+      background: #3730a3;
+      color: #c7d2fe;
+    }
+
+    .commit-expanded {
+      margin-top: 12px;
+      margin-left: 44px;
+      padding: 12px;
+      background: #0a2540;
+      border-radius: 6px;
+      border-left: 2px solid #3b82f6;
+    }
+
+    .commit-detail-row {
+      display: flex;
+      gap: 8px;
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    .commit-detail-label {
+      color: #6b7280;
+      min-width: 60px;
+    }
+
+    .commit-detail-value {
+      color: #d1d5db;
+    }
+
+    .group-select-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #1e3a5f;
+    }
+
+    .group-select {
+      padding: 6px 10px;
+      background: #0f3460;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #eee;
+      font-size: 13px;
+      min-width: 200px;
+      cursor: pointer;
+    }
+
+    .group-select:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+
+    .group-select option {
+      background: #0f3460;
+      color: #eee;
+    }
+
+    /* Bulk group action bar */
+    .bulk-group-action {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: #1e3a5f;
+      border-radius: 6px;
+      border: 1px solid #3b82f6;
+    }
+
+    .bulk-group-select {
+      padding: 4px 8px;
+      background: #0f3460;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #eee;
+      font-size: 13px;
+      min-width: 150px;
+      cursor: pointer;
+    }
+
+    .bulk-group-select:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+
+    .bulk-group-select option {
+      background: #0f3460;
+      color: #eee;
+    }
   </style>
 </head>
 <body>
@@ -584,6 +714,14 @@
       <div class="actions-bar">
         <div class="selection-info">
           <span id="selectionCount">0 commits selected</span>
+        </div>
+        <!-- Bulk group assignment (hidden until groups exist) -->
+        <div id="bulkGroupAction" class="bulk-group-action hidden">
+          <span style="font-size: 13px; color: #9ca3af;">Move to:</span>
+          <select id="bulkGroupSelect" class="bulk-group-select">
+            <option value="">No group</option>
+          </select>
+          <button id="bulkMoveBtn" class="secondary" style="padding: 6px 12px;">Move</button>
         </div>
         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: #ccc;">
           <input type="checkbox" id="groupedModeToggle" style="width: 16px; height: 16px; cursor: pointer;">

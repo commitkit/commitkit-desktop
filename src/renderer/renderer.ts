@@ -49,6 +49,11 @@ let bullets: Map<string, BulletData> = new Map();
 let groupedBullets: GroupedBulletData[] = [];
 let isGroupedMode = false;
 
+// Group management state
+let expandedCommits: Set<string> = new Set();
+let commitGroupOverrides: Map<string, string | null> = new Map(); // commit hash -> group key (null = no group)
+let availableGroups: Array<{ key: string; name: string }> = [];
+
 interface SavedRepo {
   path: string;
   name: string;
@@ -97,6 +102,11 @@ const ollamaModel = document.getElementById('ollamaModel') as HTMLSelectElement;
 const groupedModeToggle = document.getElementById('groupedModeToggle') as HTMLInputElement;
 const groupedBulletsContainer = document.getElementById('groupedBulletsContainer') as HTMLElement;
 
+// Bulk group action elements
+const bulkGroupAction = document.getElementById('bulkGroupAction') as HTMLElement;
+const bulkGroupSelect = document.getElementById('bulkGroupSelect') as HTMLSelectElement;
+const bulkMoveBtn = document.getElementById('bulkMoveBtn') as HTMLButtonElement;
+
 // Initialize
 async function init() {
   // Check Ollama status
@@ -129,6 +139,11 @@ async function init() {
       renderCommits();
       renderGroupedBullets();
     });
+  }
+
+  // Bulk move button
+  if (bulkMoveBtn) {
+    bulkMoveBtn.addEventListener('click', handleBulkMove);
   }
 
   // Settings modal listeners
@@ -203,8 +218,14 @@ async function onBranchChanged() {
 
   // Reload authors for new branch, then reload commits
   await loadAuthors();
+
+  // Clear existing state
   bullets.clear();
   selectedCommits.clear();
+  groupedBullets = [];
+  availableGroups = [];
+  commitGroupOverrides.clear();
+  expandedCommits.clear();
   await loadCommits();
 }
 
@@ -216,9 +237,13 @@ async function onFiltersChanged() {
   const maxCount = maxCountSelect.value;
   await window.commitkit.updateRepoSettings(currentRepoPath, { author, maxCount });
 
-  // Clear existing bullets and selection when filters change
+  // Clear existing state when filters change
   bullets.clear();
   selectedCommits.clear();
+  groupedBullets = [];
+  availableGroups = [];
+  commitGroupOverrides.clear();
+  expandedCommits.clear();
   await loadCommits();
 }
 
@@ -303,24 +328,91 @@ async function loadCommits() {
   }
 }
 
+function getCommitGroup(hash: string): { key: string; name: string } | null {
+  // Check for user override first
+  if (commitGroupOverrides.has(hash)) {
+    const overrideKey = commitGroupOverrides.get(hash);
+    if (overrideKey === null) return null; // Explicitly set to no group
+    const group = availableGroups.find(g => g.key === overrideKey);
+    if (group) return group;
+  }
+
+  // Find the auto-detected group from grouped bullets
+  for (const gb of groupedBullets) {
+    if (gb.groupType === 'epic' && gb.commits.some(c => c.hash === hash)) {
+      return { key: gb.groupKey, name: gb.groupName };
+    }
+  }
+
+  return null;
+}
+
 function renderCommits() {
   commitsList.innerHTML = '';
 
   commits.forEach((commit) => {
     const bullet = bullets.get(commit.hash);
     const isSelected = selectedCommits.has(commit.hash);
+    const isExpanded = expandedCommits.has(commit.hash);
+    const group = getCommitGroup(commit.hash);
+    const hasGroupsAvailable = availableGroups.length > 0;
 
     const div = document.createElement('div');
     div.className = 'commit-item';
     div.innerHTML = `
       <input type="checkbox" class="commit-checkbox" data-hash="${commit.hash}" ${isSelected ? 'checked' : ''}>
       <div class="commit-content">
-        <div class="commit-message">${escapeHtml(commit.message)}</div>
-        <div class="commit-meta">
-          <span class="commit-hash">${commit.hash.substring(0, 7)}</span>
-          <span>${commit.author}</span>
-          <span>${formatDate(commit.timestamp)}</span>
+        <div class="commit-row-header" data-expand-hash="${commit.hash}">
+          <span class="expand-chevron ${isExpanded ? 'expanded' : ''}">▶</span>
+          <div class="commit-main">
+            <div>
+              <div class="commit-message">${escapeHtml(commit.message.split('\n')[0])}</div>
+              <div class="commit-meta">
+                <span class="commit-hash">${commit.hash.substring(0, 7)}</span>
+                <span>${commit.author}</span>
+                <span>${formatDate(commit.timestamp)}</span>
+              </div>
+            </div>
+            ${hasGroupsAvailable ? `
+              <span class="group-pill ${group ? 'has-group' : ''}">${group ? escapeHtml(group.name) : 'No group'}</span>
+            ` : ''}
+          </div>
         </div>
+
+        ${isExpanded ? `
+          <div class="commit-expanded">
+            <div class="commit-detail-row">
+              <span class="commit-detail-label">Author</span>
+              <span class="commit-detail-value">${escapeHtml(commit.author)} &lt;${escapeHtml(commit.email)}&gt;</span>
+            </div>
+            <div class="commit-detail-row">
+              <span class="commit-detail-label">Date</span>
+              <span class="commit-detail-value">${new Date(commit.timestamp).toLocaleString()}</span>
+            </div>
+            <div class="commit-detail-row">
+              <span class="commit-detail-label">Hash</span>
+              <span class="commit-detail-value" style="font-family: monospace;">${commit.hash}</span>
+            </div>
+            ${commit.message.includes('\n') ? `
+              <div class="commit-detail-row" style="flex-direction: column; gap: 4px;">
+                <span class="commit-detail-label">Full message</span>
+                <span class="commit-detail-value" style="white-space: pre-wrap;">${escapeHtml(commit.message)}</span>
+              </div>
+            ` : ''}
+            ${hasGroupsAvailable ? `
+              <div class="group-select-row">
+                <span class="commit-detail-label">Group</span>
+                <select class="group-select" data-group-hash="${commit.hash}">
+                  <option value="" ${!group ? 'selected' : ''}>No group</option>
+                  ${availableGroups.map(g => `
+                    <option value="${escapeHtml(g.key)}" ${group?.key === g.key ? 'selected' : ''}>${escapeHtml(g.name)}</option>
+                  `).join('')}
+                </select>
+              </div>
+            ` : ''}
+          </div>
+        ` : ''}
+
         ${bullet ? `
           <div class="bullet-section">
             <div class="bullet-text">${escapeHtml(bullet.text)}</div>
@@ -330,21 +422,84 @@ function renderCommits() {
               ${!bullet.hasGitHub && !bullet.hasJira ? '<span class="badge">Commit only</span>' : ''}
             </div>
             <div class="bullet-actions">
-              <button onclick="copyBullet('${commit.hash}')">Copy</button>
-              <button onclick="regenerateBullet('${commit.hash}')" class="secondary">Regenerate</button>
+              <button data-copy-hash="${commit.hash}">Copy</button>
+              <button data-regen-hash="${commit.hash}" class="secondary">Regenerate</button>
             </div>
           </div>
         ` : ''}
       </div>
     `;
 
+    // Event: checkbox toggle
     const checkbox = div.querySelector('.commit-checkbox') as HTMLInputElement;
-    checkbox.addEventListener('change', () => toggleCommit(commit.hash));
+    checkbox.addEventListener('change', (e) => {
+      e.stopPropagation();
+      toggleCommit(commit.hash);
+    });
+
+    // Event: expand/collapse row
+    const rowHeader = div.querySelector('.commit-row-header') as HTMLElement;
+    rowHeader.addEventListener('click', (e) => {
+      // Don't expand if clicking on checkbox
+      if ((e.target as HTMLElement).classList.contains('commit-checkbox')) return;
+      toggleExpandCommit(commit.hash);
+    });
+
+    // Event: group select change
+    const groupSelect = div.querySelector('.group-select') as HTMLSelectElement | null;
+    if (groupSelect) {
+      groupSelect.addEventListener('change', () => {
+        const newGroupKey = groupSelect.value || null;
+        commitGroupOverrides.set(commit.hash, newGroupKey);
+        renderCommits(); // Re-render to update the pill
+      });
+      // Prevent row expansion when clicking dropdown
+      groupSelect.addEventListener('click', (e) => e.stopPropagation());
+    }
+
+    // Event: copy bullet
+    const copyBtn = div.querySelector('[data-copy-hash]') as HTMLButtonElement | null;
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async () => {
+        const b = bullets.get(commit.hash);
+        if (b) await navigator.clipboard.writeText(b.text);
+      });
+    }
+
+    // Event: regenerate bullet
+    const regenBtn = div.querySelector('[data-regen-hash]') as HTMLButtonElement | null;
+    if (regenBtn) {
+      regenBtn.addEventListener('click', async () => {
+        await regenerateBulletForHash(commit.hash);
+      });
+    }
 
     commitsList.appendChild(div);
   });
 
   updateSelectionCount();
+}
+
+function toggleExpandCommit(hash: string) {
+  if (expandedCommits.has(hash)) {
+    expandedCommits.delete(hash);
+  } else {
+    expandedCommits.add(hash);
+  }
+  renderCommits();
+}
+
+async function regenerateBulletForHash(hash: string) {
+  if (!currentRepoPath) return;
+
+  const result = await window.commitkit.generateBullet(hash, currentRepoPath) as GenerateBulletResult;
+
+  if ('text' in result) {
+    bullets.set(hash, result as BulletData);
+    renderCommits();
+  } else if (isError(result)) {
+    alert(`Error: ${result.error}`);
+  }
 }
 
 function toggleCommit(hash: string) {
@@ -371,6 +526,41 @@ function updateSelectionCount() {
   selectionCount.textContent = `${total} loaded, ${selected} selected`;
   generateBtn.disabled = selected === 0;
   selectAllBtn.textContent = selected === total ? 'Deselect All' : 'Select All';
+
+  // Show/hide bulk group action
+  updateBulkGroupAction();
+}
+
+function updateBulkGroupAction() {
+  const hasGroups = availableGroups.length > 0;
+  const hasSelection = selectedCommits.size > 0;
+
+  if (hasGroups && hasSelection) {
+    bulkGroupAction.classList.remove('hidden');
+
+    // Update dropdown options
+    bulkGroupSelect.innerHTML = '<option value="">No group</option>';
+    availableGroups.forEach(g => {
+      const option = document.createElement('option');
+      option.value = g.key;
+      option.textContent = g.name;
+      bulkGroupSelect.appendChild(option);
+    });
+  } else {
+    bulkGroupAction.classList.add('hidden');
+  }
+}
+
+function handleBulkMove() {
+  const targetGroupKey = bulkGroupSelect.value || null;
+
+  // Apply the group override to all selected commits
+  selectedCommits.forEach(hash => {
+    commitGroupOverrides.set(hash, targetGroupKey);
+  });
+
+  // Re-render to show updated pills
+  renderCommits();
 }
 
 async function handleGenerateBullets() {
@@ -416,7 +606,17 @@ async function generateGroupedBulletsAction() {
 
   if (Array.isArray(results)) {
     groupedBullets = results;
+
+    // Extract available groups from epic-type results
+    availableGroups = results
+      .filter(g => g.groupType === 'epic')
+      .map(g => ({ key: g.groupKey, name: g.groupName }));
+
+    // Clear any user overrides from previous sessions
+    commitGroupOverrides.clear();
+
     renderGroupedBullets();
+    renderCommits(); // Re-render to show group pills
   } else if (isError(results)) {
     alert(`Error: ${results.error}`);
   }
@@ -508,9 +708,19 @@ function renderGroupedBullets() {
   const epicGroups = groupedBullets.filter(g => g.groupType === 'epic');
   const individualBullets = groupedBullets.filter(g => g.groupType === 'individual');
 
+  // Check if any overrides exist
+  const hasOverrides = commitGroupOverrides.size > 0;
+
   groupedBulletsContainer.innerHTML = `
     ${epicGroups.length > 0 ? `
-      <h3 style="margin-bottom: 16px; color: #f0f0f0;">Feature Bullets (${epicGroups.length} epics) - STAR Format</h3>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="color: #f0f0f0; margin: 0;">Feature Bullets (${epicGroups.length} epics) - STAR Format</h3>
+        ${hasOverrides ? `
+          <button id="regenerateAllBtn" style="background: #f59e0b; color: #1a1a2e; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500;">
+            ⟳ Regenerate with Changes
+          </button>
+        ` : ''}
+      </div>
       ${epicGroups.map((group, index) => `
         <div class="grouped-bullet-item" style="background: #2a2a2a; border-radius: 8px; padding: 16px; margin-bottom: 12px; border-left: 3px solid #8b5cf6;">
           <div class="group-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
@@ -592,28 +802,53 @@ function renderGroupedBullets() {
       }
     });
   });
+
+  // Regenerate all button
+  const regenerateAllBtn = document.getElementById('regenerateAllBtn') as HTMLButtonElement | null;
+  if (regenerateAllBtn) {
+    regenerateAllBtn.addEventListener('click', handleRegenerateWithOverrides);
+  }
 }
 
-// Global functions for button onclick handlers
-(window as any).copyBullet = async (hash: string) => {
-  const bullet = bullets.get(hash);
-  if (bullet) {
-    await navigator.clipboard.writeText(bullet.text);
-  }
-};
+async function handleRegenerateWithOverrides() {
+  if (!currentRepoPath || selectedCommits.size === 0) return;
 
-(window as any).regenerateBullet = async (hash: string) => {
-  if (!currentRepoPath) return;
+  generateBtn.disabled = true;
+  progressContainer.classList.remove('hidden');
+  progressFill.style.width = '0%';
 
-  const result = await window.commitkit.generateBullet(hash, currentRepoPath) as GenerateBulletResult;
+  // Convert Map to plain object for IPC
+  const overrides: Record<string, string | null> = {};
+  commitGroupOverrides.forEach((value, key) => {
+    overrides[key] = value;
+  });
 
-  if ('text' in result) {
-    bullets.set(hash, result as BulletData);
+  const hashes = Array.from(selectedCommits);
+  const results = await window.commitkit.generateGroupedBullets(hashes, currentRepoPath, overrides) as GenerateGroupedBulletsResult;
+
+  if (Array.isArray(results)) {
+    groupedBullets = results;
+
+    // Update available groups from new results
+    availableGroups = results
+      .filter(g => g.groupType === 'epic')
+      .map(g => ({ key: g.groupKey, name: g.groupName }));
+
+    // Clear overrides after successful regeneration (they're now reflected in the data)
+    commitGroupOverrides.clear();
+
+    renderGroupedBullets();
     renderCommits();
-  } else if (isError(result)) {
-    alert(`Error: ${result.error}`);
+  } else if (isError(results)) {
+    alert(`Error: ${results.error}`);
   }
-};
+
+  progressContainer.classList.add('hidden');
+  generateBtn.disabled = false;
+}
+
+// Global functions kept for backwards compatibility (CSP-safe event listeners are now used)
+// These can be removed in a future cleanup
 
 // Utilities
 function escapeHtml(str: string): string {
