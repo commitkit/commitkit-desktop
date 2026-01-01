@@ -298,8 +298,14 @@ ipcMain.handle('generate-bullets', async (_event, commitHashes: string[], repoPa
 
     // Bulk fetch JIRA issues (one API call for all tickets)
     let jiraCache = new Map<string, import('../types').JiraIssue>();
+    console.log('[JIRA] Config check:', {
+      hasBaseUrl: !!config.jira?.baseUrl,
+      hasEmail: !!config.jira?.email,
+      hasToken: !!config.jira?.apiToken,
+    });
     if (config.jira?.baseUrl && config.jira?.email && config.jira?.apiToken) {
       const jiraKeys = extractAllJiraKeys(selectedCommits);
+      console.log('[JIRA] Found ticket keys:', jiraKeys);
       if (jiraKeys.length > 0) {
         if (mainWindow) {
           mainWindow.webContents.send('generation-progress', {
@@ -316,7 +322,10 @@ ipcMain.handle('generate-bullets', async (_event, commitHashes: string[], repoPa
           storyPointsField: config.jira.storyPointsField,
         });
         jiraCache = await jira.getIssuesBulk(jiraKeys);
+        console.log('[JIRA] Fetched issues:', jiraCache.size);
       }
+    } else {
+      console.log('[JIRA] Skipping - missing config');
     }
 
     const results: Array<{ text: string; commitHash: string; generatedAt: string; hasGitHub?: boolean; hasJira?: boolean }> = [];

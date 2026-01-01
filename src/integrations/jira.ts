@@ -118,6 +118,8 @@ export class JiraPlugin implements Plugin {
     for (let i = 0; i < keys.length; i += batchSize) {
       const batch = keys.slice(i, i + batchSize);
       const jql = `key in (${batch.join(',')})`;
+      console.log('[JIRA] Bulk fetch URL:', `${this.config.baseUrl}/rest/api/3/search/jql`);
+      console.log('[JIRA] JQL query:', jql);
 
       try {
         const response = await axios.post(
@@ -139,14 +141,18 @@ export class JiraPlugin implements Plugin {
           { headers: this.getHeaders() }
         );
 
+        console.log('[JIRA] Response status:', response.status);
+        console.log('[JIRA] Issues returned:', response.data.issues?.length || 0);
         for (const issueData of response.data.issues || []) {
           const issue = this.parseIssue(issueData);
           if (issue) {
+            console.log('[JIRA] Parsed issue:', issue.key, '-', issue.summary);
             results.set(issue.key, issue);
           }
         }
-      } catch (error) {
-        console.error('JIRA bulk fetch error:', error);
+      } catch (error: unknown) {
+        const axiosError = error as { response?: { status?: number; data?: unknown } };
+        console.error('[JIRA] Bulk fetch error:', axiosError.response?.status, axiosError.response?.data);
         // Continue with other batches
       }
     }
