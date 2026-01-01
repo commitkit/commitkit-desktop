@@ -14,6 +14,40 @@ export interface OllamaConfig {
   temperature?: number; // Default: 0.7
 }
 
+/**
+ * Build a STAR format prompt for CV bullet generation
+ * Exported for use in evals and testing
+ */
+export function buildStarPrompt(epicName: string, tickets: string[], commits: string[]): string {
+  return `You are summarizing a software engineering project/feature for a CV/resume using the STAR format.
+
+CONTEXT:
+- ${commits.length} commits over this feature/project
+- Epic: ${epicName}
+
+JIRA TICKETS IN THIS FEATURE:
+${tickets.map(t => `- ${t}`).join('\n')}
+
+SAMPLE COMMIT MESSAGES:
+${commits.map(c => `- ${c}`).join('\n')}
+
+OUTPUT FORMAT - Generate a STAR format summary with these exact labels:
+
+**Situation:** [1-2 sentences describing the business problem, user need, or opportunity that prompted this work.]
+
+**Task:** [1 sentence describing your specific responsibility or goal.]
+
+**Action:** [2-3 sentences describing what you actually built/implemented. Be specific about technologies.]
+
+**Result:** [Leave this as a placeholder for the user to fill in with metrics]
+
+STRICT RULES:
+1. Use ONLY information from the JIRA tickets and commit messages
+2. For Result, ALWAYS output exactly: "[Add metrics: e.g., reduced X by Y%, improved Z for N users]"
+
+Generate the STAR format summary now:`;
+}
+
 export class OllamaProvider implements AIProvider {
   id = 'ollama';
   name = 'Ollama (Local)';

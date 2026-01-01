@@ -97,6 +97,17 @@ describe('Config Service', () => {
         JSON.stringify(config, null, 2)
       );
     });
+
+    it('should throw descriptive error on write failure', () => {
+      mockedFs.existsSync.mockReturnValue(true);
+      mockedFs.writeFileSync.mockImplementationOnce(() => {
+        throw new Error('EACCES: permission denied');
+      });
+
+      expect(() => saveConfig({ github: { token: 'test' } })).toThrow(
+        /Failed to save config.*permission denied/
+      );
+    });
   });
 
   describe('updateConfig', () => {
@@ -174,6 +185,7 @@ describe('Config Service', () => {
         expect(result.path).toBe('/path/to/new-repo');
         expect(result.name).toBe('new-repo');
         expect(result.addedAt).toBeDefined();
+        expect(mockedFs.writeFileSync).toHaveBeenCalled();
       });
 
       it('should return existing repo if already added', () => {

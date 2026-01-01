@@ -52,10 +52,15 @@ export function getConfig(): AppConfig {
 }
 
 export function saveConfig(config: AppConfig): void {
-  if (!fs.existsSync(CONFIG_DIR)) {
-    fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(CONFIG_DIR)) {
+      fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    }
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to save config to ${CONFIG_FILE}: ${message}`);
   }
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
 }
 
 export function updateConfig(partial: Partial<AppConfig>): AppConfig {

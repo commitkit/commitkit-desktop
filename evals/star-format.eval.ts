@@ -10,6 +10,7 @@
 import { evalite } from 'evalite';
 import { Ollama } from 'ollama';
 import { parseStarFormat, hasCompleteStarFormat } from '../src/utils/star-format';
+import { buildStarPrompt } from '../src/services/ollama';
 
 const ollama = new Ollama({ host: 'http://localhost:11434' });
 const MODEL = process.env.OLLAMA_MODEL || 'llama3.2';
@@ -64,38 +65,14 @@ const resultHasPlaceholder = (output: string): number => {
   return hasPlaceholder ? 1.0 : 0.5;
 };
 
-// The STAR format prompt (same as in ollama.ts)
-const buildStarPrompt = (epicName: string, tickets: string[], commits: string[]) => `
-You are summarizing a software engineering project/feature for a CV/resume using the STAR format.
-
-CONTEXT:
-- ${commits.length} commits over this feature/project
-- Epic: ${epicName}
-
-JIRA TICKETS IN THIS FEATURE:
-${tickets.map(t => `- ${t}`).join('\n')}
-
-SAMPLE COMMIT MESSAGES:
-${commits.map(c => `- ${c}`).join('\n')}
-
-OUTPUT FORMAT - Generate a STAR format summary with these exact labels:
-
-**Situation:** [1-2 sentences describing the business problem, user need, or opportunity that prompted this work.]
-
-**Task:** [1 sentence describing your specific responsibility or goal.]
-
-**Action:** [2-3 sentences describing what you actually built/implemented. Be specific about technologies.]
-
-**Result:** [Leave this as a placeholder for the user to fill in with metrics]
-
-STRICT RULES:
-1. Use ONLY information from the JIRA tickets and commit messages
-2. For Result, ALWAYS output exactly: "[Add metrics: e.g., reduced X by Y%, improved Z for N users]"
-
-Generate the STAR format summary now:`;
+// Quality threshold: all scorers must average at least 0.7
+const QUALITY_THRESHOLD = 0.7;
 
 evalite('STAR Format Quality', {
+  threshold: QUALITY_THRESHOLD,
+
   data: async () => [
+    // Test case 1: Content management feature
     {
       input: {
         epicName: 'Find and Replace Feature',
@@ -113,6 +90,7 @@ evalite('STAR Format Quality', {
       },
       expected: 'Complete STAR with situation, task, action, result',
     },
+    // Test case 2: AI/ML feature
     {
       input: {
         epicName: 'AI Grading System',
@@ -127,6 +105,113 @@ evalite('STAR Format Quality', {
         ],
       },
       expected: 'Complete STAR with AI/technical details',
+    },
+    // Test case 3: Authentication/Security feature
+    {
+      input: {
+        epicName: 'SSO Integration',
+        tickets: [
+          'SEC-50: Implement SAML SSO for enterprise customers',
+          'SEC-51: Add OAuth2 fallback authentication',
+          'SEC-52: Create SSO configuration admin panel',
+        ],
+        commits: [
+          'SEC-50: Add SAML service provider',
+          'SEC-50: Implement assertion consumer endpoint',
+          'SEC-51: Add OAuth2 authorization flow',
+          'SEC-52: Build SSO settings UI',
+          'SEC-52: Add SSO testing mode',
+        ],
+      },
+      expected: 'Complete STAR with security/authentication context',
+    },
+    // Test case 4: Performance optimization
+    {
+      input: {
+        epicName: 'Database Performance Optimization',
+        tickets: [
+          'PERF-30: Optimize slow report queries',
+          'PERF-31: Add caching layer for dashboard',
+        ],
+        commits: [
+          'PERF-30: Add database indexes',
+          'PERF-30: Refactor N+1 queries',
+          'PERF-31: Implement Redis caching',
+          'PERF-31: Add cache invalidation',
+        ],
+      },
+      expected: 'Complete STAR with performance/technical details',
+    },
+    // Test case 5: API development
+    {
+      input: {
+        epicName: 'Public API v2',
+        tickets: [
+          'API-100: Design REST API v2 endpoints',
+          'API-101: Implement rate limiting',
+          'API-102: Add API key authentication',
+          'API-103: Create API documentation',
+        ],
+        commits: [
+          'API-100: Add v2 controllers',
+          'API-100: Implement pagination',
+          'API-101: Add rate limiter middleware',
+          'API-102: Create API key model',
+          'API-103: Generate OpenAPI spec',
+        ],
+      },
+      expected: 'Complete STAR with API development context',
+    },
+    // Test case 6: Frontend/UI feature
+    {
+      input: {
+        epicName: 'Dashboard Redesign',
+        tickets: [
+          'UI-200: Redesign main dashboard layout',
+          'UI-201: Add customizable widgets',
+          'UI-202: Implement dark mode',
+        ],
+        commits: [
+          'UI-200: Create new dashboard grid',
+          'UI-200: Add responsive breakpoints',
+          'UI-201: Build widget system',
+          'UI-201: Add drag-and-drop',
+          'UI-202: Implement theme provider',
+        ],
+      },
+      expected: 'Complete STAR with frontend/UI context',
+    },
+    // Test case 7: Small feature (edge case - minimal input)
+    {
+      input: {
+        epicName: 'Export Feature',
+        tickets: [
+          'FEAT-10: Add CSV export for reports',
+        ],
+        commits: [
+          'FEAT-10: Add export endpoint',
+          'FEAT-10: Format CSV output',
+        ],
+      },
+      expected: 'Complete STAR even with minimal input',
+    },
+    // Test case 8: Integration feature
+    {
+      input: {
+        epicName: 'Slack Integration',
+        tickets: [
+          'INT-40: Build Slack notification service',
+          'INT-41: Add Slack OAuth app connection',
+          'INT-42: Create notification preferences UI',
+        ],
+        commits: [
+          'INT-40: Add Slack API client',
+          'INT-40: Implement message templates',
+          'INT-41: Add OAuth callback handler',
+          'INT-42: Build preferences form',
+        ],
+      },
+      expected: 'Complete STAR with integration context',
     },
   ],
 
