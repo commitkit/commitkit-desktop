@@ -497,9 +497,14 @@ ipcMain.handle('generate-grouped-bullets', async (_event, commitHashes: string[]
 
         // Convert AI suggestions to CommitGroup format
         for (const aiGroup of clustering.groups) {
+          console.log('[GROUPED] Processing AI group:', aiGroup.name, 'with', aiGroup.commitHashes.length, 'commits');
+
+          // The Ollama service now returns actual hashes (converted from indices)
           const groupCommits = aiGroup.commitHashes
-            .map(h => ungroupedCommits.find(u => u.commit.hash === h || u.commit.hash.startsWith(h)))
+            .map(hash => ungroupedCommits.find(u => u.commit.hash === hash))
             .filter((u): u is { commit: Commit; issues: JiraIssue[] } => u !== undefined);
+
+          console.log('[GROUPED] Matched commits:', groupCommits.length);
 
           if (groupCommits.length >= 2) {
             aiGroups.push({

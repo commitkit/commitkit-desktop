@@ -234,7 +234,7 @@ describe('OllamaProvider', () => {
   });
 
   describe('buildClusteringPrompt', () => {
-    it('should include all commit data in prompt', () => {
+    it('should include all commit data in prompt with numbered indices', () => {
       const commits = [
         {
           hash: 'abc123',
@@ -252,9 +252,9 @@ describe('OllamaProvider', () => {
 
       const prompt = provider.buildClusteringPrompt(commits);
 
-      // Should contain commit hashes
-      expect(prompt).toContain('abc123');
-      expect(prompt).toContain('def456');
+      // Should contain numbered commit indices (not hashes - LLMs hallucinate hashes)
+      expect(prompt).toContain('COMMIT 1:');
+      expect(prompt).toContain('COMMIT 2:');
 
       // Should contain commit messages
       expect(prompt).toContain('Add user login');
@@ -268,21 +268,24 @@ describe('OllamaProvider', () => {
       expect(prompt).toContain('+export function login()');
       expect(prompt).toContain('+export function logout()');
 
-      // Should contain JSON structure guidance
+      // Should contain JSON structure guidance with index-based format
       expect(prompt).toContain('groups');
       expect(prompt).toContain('ungrouped');
       expect(prompt).toContain('confidence');
+      expect(prompt).toContain('index');
     });
 
     it('should handle empty commits array', () => {
       const prompt = provider.buildClusteringPrompt([]);
-      expect(prompt).toContain('COMMITS:');
+      // Prompt should still contain instructions even with no commits
+      expect(prompt).toContain('Analyze these git commits');
+      expect(prompt).toContain('groups');
     });
   });
 
   describe('analyzeCommitsForGrouping', () => {
-    it('should parse valid JSON response and return groups', async () => {
-      // Mock the generate function to return a valid clustering result
+    it('should parse valid JSON response with indices and return groups with hashes', async () => {
+      // Mock the generate function to return a valid clustering result using indices
       const mockOllama = require('ollama');
       mockOllama.Ollama.mockImplementation(() => ({
         generate: jest.fn().mockResolvedValue({
@@ -292,14 +295,14 @@ describe('OllamaProvider', () => {
                 name: 'Authentication Feature',
                 theme: 'authentication',
                 commits: [
-                  { hash: 'abc123', confidence: 0.95 },
-                  { hash: 'def456', confidence: 0.88 },
+                  { index: 1, confidence: 0.95 },  // abc123
+                  { index: 2, confidence: 0.88 },  // def456
                 ],
                 overall_confidence: 0.91,
                 reasoning: 'Both commits relate to user auth',
               },
             ],
-            ungrouped: ['ghi789'],
+            ungrouped: [3],  // ghi789
           }),
         }),
         list: jest.fn().mockResolvedValue({ models: [{ name: 'qwen2.5:14b' }] }),
@@ -316,6 +319,7 @@ describe('OllamaProvider', () => {
 
       expect(result.groups).toHaveLength(1);
       expect(result.groups[0].name).toBe('Authentication Feature');
+      // The service converts indices back to hashes
       expect(result.groups[0].commitHashes).toContain('abc123');
       expect(result.groups[0].commitHashes).toContain('def456');
       expect(result.ungrouped).toContain('ghi789');
@@ -331,8 +335,8 @@ describe('OllamaProvider', () => {
                 name: 'Auth Feature',
                 theme: 'auth',
                 commits: [
-                  { hash: 'abc123', confidence: 0.95 },  // High - should stay
-                  { hash: 'def456', confidence: 0.75 },  // Below 0.9 - should be removed in strict
+                  { index: 1, confidence: 0.95 },  // High - should stay
+                  { index: 2, confidence: 0.75 },  // Below 0.9 - should be removed in strict
                 ],
                 overall_confidence: 0.85,
                 reasoning: 'Auth related',
@@ -369,8 +373,8 @@ describe('OllamaProvider', () => {
                 name: 'Auth Feature',
                 theme: 'auth',
                 commits: [
-                  { hash: 'abc123', confidence: 0.95 },
-                  { hash: 'def456', confidence: 0.92 },
+                  { index: 1, confidence: 0.95 },
+                  { index: 2, confidence: 0.92 },
                 ],
                 overall_confidence: 0.93,
                 reasoning: 'Auth related',
@@ -405,8 +409,8 @@ describe('OllamaProvider', () => {
                 name: 'Misc Feature',
                 theme: 'misc',
                 commits: [
-                  { hash: 'abc123', confidence: 0.65 },
-                  { hash: 'def456', confidence: 0.62 },
+                  { index: 1, confidence: 0.65 },
+                  { index: 2, confidence: 0.62 },
                 ],
                 overall_confidence: 0.63,
                 reasoning: 'Loosely related',
@@ -464,8 +468,8 @@ describe('OllamaProvider', () => {
                 name: 'Solo Feature',
                 theme: 'feature',
                 commits: [
-                  { hash: 'abc123', confidence: 0.95 },
-                  { hash: 'def456', confidence: 0.5 },  // Will be filtered in balanced mode
+                  { index: 1, confidence: 0.95 },
+                  { index: 2, confidence: 0.5 },  // Will be filtered in balanced mode
                 ],
                 overall_confidence: 0.72,
                 reasoning: 'Related',

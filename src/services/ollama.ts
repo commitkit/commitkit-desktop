@@ -382,7 +382,6 @@ Generate the STAR format summary now:`);
     diffSample: string;
   }>): string {
     const commitDescriptions = commits.map((c, i) => {
-      const shortHash = c.hash.substring(0, 7);
       const firstLine = c.message.split('\n')[0];
       const files = c.filesChanged.length > 0
         ? `Files: ${c.filesChanged.slice(0, 5).join(', ')}${c.filesChanged.length > 5 ? ` (+${c.filesChanged.length - 5} more)` : ''}`
@@ -391,30 +390,32 @@ Generate the STAR format summary now:`);
         ? `\n   Changes:\n   \`\`\`diff\n${c.diffSample.split('\n').slice(0, 20).join('\n')}\n   \`\`\``
         : '';
 
-      return `${i + 1}. [${shortHash}] ${firstLine}
+      // Use 1-based index for easier human readability
+      return `COMMIT ${i + 1}: ${firstLine}
    ${files}${diff}`;
     }).join('\n\n');
 
     return `Analyze these git commits and group them by feature, component, or logical change.
 
-COMMITS:
 ${commitDescriptions}
 
-OUTPUT FORMAT - Respond with ONLY valid JSON, no other text:
+OUTPUT FORMAT - Respond with ONLY valid JSON, no other text.
+IMPORTANT: Use commit NUMBERS (1, 2, 3, etc.) to reference commits, NOT hashes.
+
 {
   "groups": [
     {
       "name": "Short descriptive name (2-5 words)",
       "theme": "authentication|api|ui|testing|refactor|bugfix|docs|config|other",
       "commits": [
-        {"hash": "abc1234", "confidence": 0.95},
-        {"hash": "def5678", "confidence": 0.82}
+        {"index": 1, "confidence": 0.95},
+        {"index": 5, "confidence": 0.82}
       ],
       "overall_confidence": 0.88,
       "reasoning": "Brief explanation (1 sentence)"
     }
   ],
-  "ungrouped": ["hash1", "hash2"]
+  "ungrouped": [3, 7, 12]
 }
 
 CONFIDENCE SCORING (0.0 to 1.0):
@@ -468,38 +469,65 @@ Respond with only the JSON:`;
         groups: Array<{
           name: string;
           theme: string;
-          commits: Array<{ hash: string; confidence: number }>;
+          commits: Array<{ index: number; confidence: number }>;
           overall_confidence: number;
           reasoning: string;
         }>;
-        ungrouped: string[];
+        ungrouped: number[];
       };
+
+      console.log('[OLLAMA] Raw AI response groups:', parsed.groups.length);
+      for (const g of parsed.groups) {
+        console.log('[OLLAMA] Group:', g.name, 'commits:', g.commits.length, 'confidence:', g.overall_confidence);
+        console.log('[OLLAMA] Commit indices:', g.commits.slice(0, 5).map(c => c.index));
+      }
 
       // Apply confidence filtering
       const thresholds = this.getConfidenceThresholds(sensitivity);
       const filteredGroups: ClusteringResult['groups'] = [];
-      const allUngrouped: string[] = [...(parsed.ungrouped || [])];
+      // Convert ungrouped indices to hashes (indices are 1-based)
+      const allUngrouped: string[] = (parsed.ungrouped || [])
+        .filter(idx => idx >= 1 && idx <= commits.length)
+        .map(idx => commits[idx - 1].hash);
 
       for (const group of parsed.groups) {
         // Filter commits by per-commit confidence threshold
         const confidentCommits = group.commits.filter(c => c.confidence >= thresholds.perCommit);
         const lowConfidenceCommits = group.commits.filter(c => c.confidence < thresholds.perCommit);
 
-        // Move low-confidence commits to ungrouped
-        allUngrouped.push(...lowConfidenceCommits.map(c => c.hash));
+        // Move low-confidence commits to ungrouped (convert indices to hashes)
+        for (const c of lowConfidenceCommits) {
+          if (c.index >= 1 && c.index <= commits.length) {
+            allUngrouped.push(commits[c.index - 1].hash);
+          }
+        }
 
         // Check if group meets per-group threshold and has enough commits
         if (group.overall_confidence >= thresholds.perGroup && confidentCommits.length >= 2) {
-          filteredGroups.push({
-            name: group.name,
-            theme: group.theme,
-            commitHashes: confidentCommits.map(c => c.hash),
-            reasoning: group.reasoning,
-            confidence: group.overall_confidence,
-          });
+          // Convert indices to hashes (indices are 1-based)
+          const commitHashes = confidentCommits
+            .filter(c => c.index >= 1 && c.index <= commits.length)
+            .map(c => commits[c.index - 1].hash);
+
+          if (commitHashes.length >= 2) {
+            filteredGroups.push({
+              name: group.name,
+              theme: group.theme,
+              commitHashes,
+              reasoning: group.reasoning,
+              confidence: group.overall_confidence,
+            });
+          } else {
+            // Not enough valid indices, dissolve group
+            allUngrouped.push(...commitHashes);
+          }
         } else {
           // Dissolve group - move all commits to ungrouped
-          allUngrouped.push(...confidentCommits.map(c => c.hash));
+          for (const c of confidentCommits) {
+            if (c.index >= 1 && c.index <= commits.length) {
+              allUngrouped.push(commits[c.index - 1].hash);
+            }
+          }
         }
       }
 
