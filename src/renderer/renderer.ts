@@ -2,8 +2,15 @@
  * CommitKit Renderer - UI Logic
  */
 
-// Import vis-network for graph visualization
-import { Network, DataSet, Options } from 'vis-network/standalone';
+// vis-network is loaded via script tag in index.html
+// These types are declared for TypeScript
+declare const vis: {
+  Network: new (container: HTMLElement, data: { nodes: unknown; edges: unknown }, options: unknown) => {
+    on: (event: string, callback: (params: { nodes: string[]; event: { srcEvent: { shiftKey: boolean } } }) => void) => void;
+    destroy: () => void;
+  };
+  DataSet: new (data: unknown[]) => unknown;
+};
 
 interface CommitData {
   hash: string;
@@ -80,7 +87,8 @@ let expandedStarSections: Map<number, Set<string>> = new Map(); // index -> set 
 // Graph visualization state
 let currentView: 'list' | 'graph' = 'list';
 let taggedCommits: TaggedCommit[] = [];
-let graphNetwork: Network | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let graphNetwork: any = null;
 let graphSelectedNodes: Set<string> = new Set();
 let isTagging = false;
 
@@ -1481,14 +1489,12 @@ function renderGraph() {
     });
   });
 
-  // Create DataSets
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const nodesDataSet = new DataSet(nodes as any);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const edgesDataSet = new DataSet(edges as any);
+  // Create DataSets using global vis object
+  const nodesDataSet = new vis.DataSet(nodes);
+  const edgesDataSet = new vis.DataSet(edges);
 
   // Network options
-  const options: Options = {
+  const options = {
     nodes: {
       borderWidth: 2,
       borderWidthSelected: 3,
@@ -1528,12 +1534,12 @@ function renderGraph() {
     },
   };
 
-  // Create the network
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  graphNetwork = new Network(graphNetworkDiv, { nodes: nodesDataSet as any, edges: edgesDataSet as any }, options);
+  // Create the network using global vis object
+  graphNetwork = new vis.Network(graphNetworkDiv, { nodes: nodesDataSet, edges: edgesDataSet }, options);
 
   // Handle node clicks
-  graphNetwork.on('click', (params) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  graphNetwork.on('click', (params: any) => {
     if (params.nodes.length > 0) {
       const nodeId = params.nodes[0] as string;
 

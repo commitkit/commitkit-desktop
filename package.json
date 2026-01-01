@@ -6,7 +6,7 @@
   "main": "dist/main/main.js",
   "scripts": {
     "start": "npm run build && electron .",
-    "build": "tsc && cp src/renderer/index.html dist/renderer/",
+    "build": "tsc && cp src/renderer/index.html dist/renderer/ && cp src/renderer/vis-network.min.js dist/renderer/",
     "watch": "tsc -w",
     "test": "jest",
     "test:watch": "jest --watch",
