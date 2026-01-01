@@ -143,6 +143,16 @@ ipcMain.handle('select-repository', async () => {
   return selectedPath;
 });
 
+// Get authors from a repository
+ipcMain.handle('get-authors', async (_event, repoPath: string, branch?: string) => {
+  try {
+    const git = new GitPlugin(repoPath, branch || 'main');
+    return await git.getAuthors();
+  } catch (error) {
+    return { error: String(error) };
+  }
+});
+
 // Load commits from a repository
 ipcMain.handle('load-commits', async (_event, repoPath: string, options?: { maxCount?: number; branch?: string; author?: string }) => {
   try {

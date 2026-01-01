@@ -113,6 +113,34 @@ export class GitPlugin implements Plugin {
   }
 
   /**
+   * Get unique authors from the branch
+   */
+  async getAuthors(): Promise<Array<{ name: string; email: string }>> {
+    try {
+      const log = await this.git.log([this.mainBranch, '--format=%an|%ae']);
+      const seen = new Set<string>();
+      const authors: Array<{ name: string; email: string }> = [];
+
+      for (const entry of log.all) {
+        // simple-git parses the format string into author_name and author_email
+        const key = entry.author_email;
+        if (!seen.has(key)) {
+          seen.add(key);
+          authors.push({
+            name: entry.author_name,
+            email: entry.author_email,
+          });
+        }
+      }
+
+      // Sort by name
+      return authors.sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Check if path is a valid git repository
    */
   static async isGitRepo(path: string): Promise<boolean> {

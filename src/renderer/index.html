@@ -429,7 +429,7 @@
     }
 
     .branch-input,
-    .author-input,
+    .author-select,
     .count-input {
       padding: 10px 12px;
       background: #0f3460;
@@ -443,8 +443,15 @@
       width: 100px;
     }
 
-    .author-input {
-      width: 180px;
+    .author-select {
+      min-width: 150px;
+      max-width: 200px;
+      cursor: pointer;
+    }
+
+    .author-select option {
+      background: #0f3460;
+      color: #eee;
     }
 
     .count-input {
@@ -452,7 +459,7 @@
     }
 
     .branch-input:focus,
-    .author-input:focus,
+    .author-select:focus,
     .count-input:focus {
       outline: none;
       border-color: #3b82f6;
@@ -487,7 +494,9 @@
             <option value="">-- Select saved repo --</option>
           </select>
           <input type="text" id="branchInput" class="branch-input" placeholder="main" value="main" title="Branch">
-          <input type="text" id="authorInput" class="author-input" placeholder="Author email" title="Filter by author email">
+          <select id="authorSelect" class="author-select" title="Filter by author">
+            <option value="">All authors</option>
+          </select>
           <input type="number" id="maxCountInput" class="count-input" placeholder="50" value="50" min="1" max="500" title="Max commits">
           <button id="addRepoBtn" class="secondary">+ Add</button>
         </div>

@@ -42,7 +42,7 @@ interface SavedRepo {
 // DOM Elements
 const repoSelect = document.getElementById('repoSelect') as HTMLSelectElement;
 const branchInput = document.getElementById('branchInput') as HTMLInputElement;
-const authorInput = document.getElementById('authorInput') as HTMLInputElement;
+const authorSelect = document.getElementById('authorSelect') as HTMLSelectElement;
 const maxCountInput = document.getElementById('maxCountInput') as HTMLInputElement;
 const addRepoBtn = document.getElementById('addRepoBtn') as HTMLButtonElement;
 const addRepoBtn2 = document.getElementById('addRepoBtn2') as HTMLButtonElement;
@@ -83,8 +83,8 @@ async function init() {
 
   // Set up event listeners
   repoSelect.addEventListener('change', onRepoSelected);
-  branchInput.addEventListener('change', onFiltersChanged);
-  authorInput.addEventListener('change', onFiltersChanged);
+  branchInput.addEventListener('change', onBranchChanged);
+  authorSelect.addEventListener('change', onFiltersChanged);
   maxCountInput.addEventListener('change', onFiltersChanged);
   addRepoBtn.addEventListener('click', addRepository);
   addRepoBtn2.addEventListener('click', addRepository);
@@ -129,6 +129,16 @@ async function onRepoSelected() {
 
   currentRepoPath = selectedPath;
   repoPath.textContent = selectedPath;
+  await loadAuthors();
+  await loadCommits();
+}
+
+async function onBranchChanged() {
+  if (!currentRepoPath) return;
+  // Reload authors for new branch, then reload commits
+  await loadAuthors();
+  bullets.clear();
+  selectedCommits.clear();
   await loadCommits();
 }
 
@@ -138,6 +148,26 @@ async function onFiltersChanged() {
   bullets.clear();
   selectedCommits.clear();
   await loadCommits();
+}
+
+async function loadAuthors() {
+  if (!currentRepoPath) return;
+
+  const branch = branchInput.value.trim() || 'main';
+  const authors = await window.commitkit.getAuthors(currentRepoPath, branch);
+
+  // Clear existing options except "All authors"
+  authorSelect.innerHTML = '<option value="">All authors</option>';
+
+  // Add author options
+  if (Array.isArray(authors)) {
+    authors.forEach((author: { name: string; email: string }) => {
+      const option = document.createElement('option');
+      option.value = author.email;
+      option.textContent = author.name;
+      authorSelect.appendChild(option);
+    });
+  }
 }
 
 async function addRepository() {
@@ -188,7 +218,7 @@ async function loadCommits() {
   commitsSection.classList.remove('hidden');
 
   const branch = branchInput.value.trim() || 'main';
-  const author = authorInput.value.trim() || undefined;
+  const author = authorSelect.value || undefined;
   const maxCount = parseInt(maxCountInput.value, 10) || 50;
   const result = await window.commitkit.loadCommits(currentRepoPath, { maxCount, branch, author }) as LoadCommitsResult;
 

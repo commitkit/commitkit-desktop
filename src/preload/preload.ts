@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('commitkit', {
   addRepository: () => ipcRenderer.invoke('add-repository'),
   removeRepository: (repoPath: string) => ipcRenderer.invoke('remove-repository', repoPath),
   selectRepository: () => ipcRenderer.invoke('select-repository'),
+  getAuthors: (repoPath: string, branch?: string) =>
+    ipcRenderer.invoke('get-authors', repoPath, branch),
   loadCommits: (repoPath: string, options?: { maxCount?: number; branch?: string; author?: string }) =>
     ipcRenderer.invoke('load-commits', repoPath, options),
 
@@ -50,6 +52,7 @@ export interface CommitKitAPI {
   addRepository: () => Promise<SavedRepo | null | { error: string }>;
   removeRepository: (repoPath: string) => Promise<{ success: boolean }>;
   selectRepository: () => Promise<string | null>;
+  getAuthors: (repoPath: string, branch?: string) => Promise<Array<{ name: string; email: string }>>;
   loadCommits: (repoPath: string, options?: { maxCount?: number; branch?: string; author?: string }) => Promise<CommitData[]>;
   generateBullet: (commitHash: string, repoPath: string) => Promise<BulletData>;
   generateBullets: (commitHashes: string[], repoPath: string) => Promise<BulletData[]>;
