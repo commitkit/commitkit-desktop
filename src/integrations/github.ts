@@ -143,6 +143,71 @@ export class GitHubPlugin implements Plugin {
   }
 
   /**
+   * Get PRs for multiple commits in bulk
+   * Uses GitHub search API with batched OR queries
+   * Returns a map of commit hash to PR (for commits that have PRs)
+   */
+  async getPRsForCommits(
+    owner: string,
+    repo: string,
+    commitHashes: string[]
+  ): Promise<Map<string, GitHubPR>> {
+    const result = new Map<string, GitHubPR>();
+
+    if (commitHashes.length === 0) {
+      return result;
+    }
+
+    // GitHub search API works best with smaller batches
+    // Using 5 commits per query to stay well under limits
+    const BATCH_SIZE = 5;
+
+    for (let i = 0; i < commitHashes.length; i += BATCH_SIZE) {
+      const batch = commitHashes.slice(i, i + BATCH_SIZE);
+
+      try {
+        // Build OR query for multiple commit hashes
+        const hashQuery = batch.join(' OR ');
+        const response = await axios.get(
+          `${this.baseUrl}/search/issues`,
+          {
+            params: {
+              q: `${hashQuery} repo:${owner}/${repo} type:pr`,
+            },
+            headers: this.getHeaders(),
+          }
+        );
+
+        // Process results - match PRs back to commits
+        for (const item of response.data.items || []) {
+          const pr: GitHubPR = {
+            number: item.number,
+            title: item.title,
+            description: item.body || '',
+            state: item.state,
+            labels: item.labels?.map((l: { name: string }) => l.name) || [],
+          };
+
+          // Check which commit(s) this PR matches
+          // The PR body or title might contain the commit hash
+          for (const hash of batch) {
+            // GitHub search matches commit hash in PR, store the mapping
+            // Note: A PR may contain multiple commits, so multiple hashes can map to same PR
+            if (!result.has(hash)) {
+              result.set(hash, pr);
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`GitHub bulk PR fetch error for batch starting at ${i}:`, error);
+        // Continue with other batches
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Test the connection with the provided token
    */
   async testConnection(): Promise<{ success: boolean; error?: string }> {

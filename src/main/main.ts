@@ -11,8 +11,8 @@ import { GitHubPlugin } from '../integrations/github';
 import { JiraPlugin } from '../integrations/jira';
 import { OllamaProvider } from '../services/ollama';
 import { getConfig, updateConfig, AppConfig, getSavedRepos, addRepo, removeRepo, updateRepoSettings, getRepoSettings } from '../services/config';
-import { Commit, EnrichmentContext, JiraIssue } from '../types';
-import { groupCommitsByFeature } from '../utils/grouping';
+import { Commit, EnrichmentContext, JiraIssue, GitHubPR } from '../types';
+import { groupCommitsMultiSignal } from '../utils/grouping';
 
 // Set app name for macOS menu bar
 app.setName('CommitKit');
@@ -442,15 +442,58 @@ ipcMain.handle('generate-grouped-bullets', async (_event, commitHashes: string[]
       }
     }
 
-    // Group commits by epic (JIRA-based), respecting user overrides
-    const { groups, ungroupedCommits } = groupCommitsByFeature(selectedCommits, jiraCache, groupOverrides);
-    console.log('[GROUPED] Created JIRA groups:', groups.map(g => ({
+    // Bulk fetch GitHub PRs (if configured)
+    let prCache = new Map<string, GitHubPR>();
+    if (config.github?.token && selectedCommits[0]?.remoteUrl?.includes('github.com')) {
+      if (mainWindow) {
+        mainWindow.webContents.send('generation-progress', {
+          current: 0,
+          total: 100,
+          message: 'Fetching GitHub PRs...',
+        });
+      }
+      const github = new GitHubPlugin(config.github.token);
+      const repoInfo = github.parseRepoFromUrl(selectedCommits[0].remoteUrl);
+      if (repoInfo) {
+        prCache = await github.getPRsForCommits(
+          repoInfo.owner,
+          repoInfo.repo,
+          selectedCommits.map(c => c.hash)
+        );
+        console.log('[GROUPED] Fetched GitHub PRs:', prCache.size);
+      }
+    }
+
+    // Fetch file changes for commits (needed for file overlap grouping)
+    if (mainWindow) {
+      mainWindow.webContents.send('generation-progress', {
+        current: 0,
+        total: 100,
+        message: 'Analyzing file changes...',
+      });
+    }
+    const git = new GitPlugin(repoPath);
+    for (const commit of selectedCommits) {
+      if (!commit.filesChanged) {
+        commit.filesChanged = await git.getFilesChanged(commit.hash);
+      }
+    }
+
+    // Group commits using multi-signal approach: PR → Epic → Sprint+Time → File Overlap
+    const { groups, ungroupedCommits } = groupCommitsMultiSignal(
+      selectedCommits,
+      jiraCache,
+      prCache,
+      { timeWindowDays: 7, overlapThreshold: 0.5 }
+    );
+    console.log('[GROUPED] Created groups:', groups.map(g => ({
       key: g.groupKey,
+      type: g.groupType,
       name: g.groupName,
       commits: g.commits.length,
       issues: g.jiraIssues.length,
     })));
-    console.log('[GROUPED] Ungrouped commits (no epic):', ungroupedCommits.length);
+    console.log('[GROUPED] Ungrouped commits:', ungroupedCommits.length);
 
     const totalItems = groups.length + ungroupedCommits.length;
 

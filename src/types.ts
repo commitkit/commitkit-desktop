@@ -100,13 +100,14 @@ export interface CVBullet {
 
 // Grouped commits for consolidated bullet generation
 export interface CommitGroup {
-  groupKey: string;           // e.g., "ES1-1234" (epic) or commit hash
-  groupType: 'epic' | 'individual';
+  groupKey: string;           // e.g., "ES1-1234" (epic), "PR-123", or commit hash
+  groupType: 'pr' | 'epic' | 'sprint' | 'file-overlap' | 'individual';
   groupName: string;          // e.g., "AI Assistant Feature" or ticket summary
   commits: Commit[];
   jiraIssues: JiraIssue[];    // All unique JIRA issues in this group
   sprint?: string;            // Most common sprint in the group
   labels: string[];           // All unique labels across the group
+  prNumber?: number;          // For PR-based groups
 }
 
 // Topic tags for commit visualization
