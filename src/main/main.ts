@@ -661,6 +661,7 @@ ipcMain.handle('save-config', (_event, newConfig: Partial<AppConfig>) => {
 
 // Test GitHub connection
 ipcMain.handle('test-github', async (_event, token: string) => {
+  console.log('[DEBUG] test-github received token:', token ? `${token.substring(0, 10)}...` : 'EMPTY');
   try {
     const github = new GitHubPlugin(token);
     return await github.testConnection();
