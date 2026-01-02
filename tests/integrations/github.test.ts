@@ -157,4 +157,112 @@ describe('GitHubPlugin', () => {
       expect(result).toBeNull();
     });
   });
+
+  describe('getPRsForCommits', () => {
+    it('should fetch PRs for multiple commits using GraphQL', async () => {
+      // Mock GraphQL response
+      mockedAxios.post.mockResolvedValueOnce({
+        data: {
+          data: {
+            repository: {
+              c0: {
+                associatedPullRequests: {
+                  nodes: [{
+                    number: 100,
+                    title: 'Feature PR',
+                    body: 'Adds new feature',
+                    state: 'MERGED',
+                    labels: { nodes: [{ name: 'feature' }] },
+                  }],
+                },
+              },
+              c1: {
+                associatedPullRequests: {
+                  nodes: [{
+                    number: 100,
+                    title: 'Feature PR',
+                    body: 'Adds new feature',
+                    state: 'MERGED',
+                    labels: { nodes: [{ name: 'feature' }] },
+                  }],
+                },
+              },
+              c2: {
+                associatedPullRequests: {
+                  nodes: [],
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const result = await plugin.getPRsForCommits('owner', 'repo', ['abc123', 'def456', 'ghi789']);
+
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://api.github.com/graphql',
+        expect.objectContaining({
+          query: expect.stringContaining('associatedPullRequests'),
+        }),
+        expect.any(Object)
+      );
+
+      expect(result.size).toBe(2); // Two commits have PRs
+      expect(result.get('abc123')?.number).toBe(100);
+      expect(result.get('def456')?.number).toBe(100);
+      expect(result.has('ghi789')).toBe(false); // No PR
+    });
+
+    it('should return empty map for empty commits array', async () => {
+      const result = await plugin.getPRsForCommits('owner', 'repo', []);
+
+      expect(result.size).toBe(0);
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+
+    it('should handle GraphQL errors gracefully', async () => {
+      mockedAxios.post.mockRejectedValueOnce(new Error('GraphQL error'));
+
+      const result = await plugin.getPRsForCommits('owner', 'repo', ['abc123']);
+
+      expect(result.size).toBe(0);
+    });
+
+    it('should batch large numbers of commits', async () => {
+      // Create 60 commit hashes (should require 2 batches of 50)
+      const commits = Array.from({ length: 60 }, (_, i) => `commit${i}`);
+
+      // Mock two GraphQL responses
+      mockedAxios.post
+        .mockResolvedValueOnce({
+          data: {
+            data: {
+              repository: Object.fromEntries(
+                Array.from({ length: 50 }, (_, i) => [
+                  `c${i}`,
+                  { associatedPullRequests: { nodes: [{ number: i, title: `PR ${i}`, body: '', state: 'MERGED', labels: { nodes: [] } }] } },
+                ])
+              ),
+            },
+          },
+        })
+        .mockResolvedValueOnce({
+          data: {
+            data: {
+              repository: Object.fromEntries(
+                Array.from({ length: 10 }, (_, i) => [
+                  `c${i}`,
+                  { associatedPullRequests: { nodes: [{ number: 50 + i, title: `PR ${50 + i}`, body: '', state: 'MERGED', labels: { nodes: [] } }] } },
+                ])
+              ),
+            },
+          },
+        });
+
+      const result = await plugin.getPRsForCommits('owner', 'repo', commits);
+
+      expect(mockedAxios.post).toHaveBeenCalledTimes(2);
+      expect(result.size).toBe(60);
+    });
+  });
 });

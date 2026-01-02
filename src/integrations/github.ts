@@ -143,8 +143,8 @@ export class GitHubPlugin implements Plugin {
   }
 
   /**
-   * Get PRs for multiple commits in bulk
-   * Uses GitHub search API with batched OR queries
+   * Get PRs for multiple commits using GraphQL
+   * Batches up to 50 commits per request for efficiency
    * Returns a map of commit hash to PR (for commits that have PRs)
    */
   async getPRsForCommits(
@@ -158,52 +158,71 @@ export class GitHubPlugin implements Plugin {
       return result;
     }
 
-    // GitHub search API works best with smaller batches
-    // Using 5 commits per query to stay well under limits
-    const BATCH_SIZE = 5;
+    // GraphQL can handle ~50 commits per request efficiently
+    const BATCH_SIZE = 50;
 
     for (let i = 0; i < commitHashes.length; i += BATCH_SIZE) {
       const batch = commitHashes.slice(i, i + BATCH_SIZE);
 
       try {
-        // Build OR query for multiple commit hashes
-        const hashQuery = batch.join(' OR ');
-        const response = await axios.get(
-          `${this.baseUrl}/search/issues`,
-          {
-            params: {
-              q: `${hashQuery} repo:${owner}/${repo} type:pr`,
-            },
-            headers: this.getHeaders(),
-          }
-        );
+        // Build GraphQL query with aliases for each commit
+        const commitQueries = batch
+          .map((hash, idx) => `c${idx}: object(oid: "${hash}") {
+            ... on Commit {
+              associatedPullRequests(first: 1) {
+                nodes {
+                  number
+                  title
+                  body
+                  state
+                  labels(first: 10) {
+                    nodes { name }
+                  }
+                }
+              }
+            }
+          }`)
+          .join('\n');
 
-        // Process results - match PRs back to commits
-        for (const item of response.data.items || []) {
-          const pr: GitHubPR = {
-            number: item.number,
-            title: item.title,
-            description: item.body || '',
-            state: item.state,
-            labels: item.labels?.map((l: { name: string }) => l.name) || [],
-          };
-
-          // Check which commit(s) this PR matches
-          // The PR body or title might contain the commit hash
-          for (const hash of batch) {
-            // GitHub search matches commit hash in PR, store the mapping
-            // Note: A PR may contain multiple commits, so multiple hashes can map to same PR
-            if (!result.has(hash)) {
-              result.set(hash, pr);
+        const query = `
+          query {
+            repository(owner: "${owner}", name: "${repo}") {
+              ${commitQueries}
             }
           }
+        `;
+
+        const response = await axios.post(
+          `${this.baseUrl}/graphql`,
+          { query },
+          { headers: this.getHeaders() }
+        );
+
+        // Process results
+        const repoData = response.data?.data?.repository;
+        if (repoData) {
+          batch.forEach((hash, idx) => {
+            const commitData = repoData[`c${idx}`];
+            const prNodes = commitData?.associatedPullRequests?.nodes;
+            if (prNodes && prNodes.length > 0) {
+              const prData = prNodes[0];
+              result.set(hash, {
+                number: prData.number,
+                title: prData.title,
+                description: prData.body || '',
+                state: prData.state.toLowerCase(),
+                labels: prData.labels?.nodes?.map((l: { name: string }) => l.name) || [],
+              });
+            }
+          });
         }
       } catch (error) {
-        console.error(`GitHub bulk PR fetch error for batch starting at ${i}:`, error);
+        console.error(`GitHub GraphQL error for batch starting at ${i}:`, error);
         // Continue with other batches
       }
     }
 
+    console.log(`[GitHub] Fetched PRs for ${result.size}/${commitHashes.length} commits`);
     return result;
   }
 
