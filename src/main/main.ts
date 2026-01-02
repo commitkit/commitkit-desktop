@@ -394,6 +394,7 @@ ipcMain.handle('generate-grouped-bullets', async (_event, commitHashes: string[]
       .filter((c): c is Commit => c !== undefined);
 
     const config = getConfig();
+    console.log('[DEBUG] generate-grouped-bullets config.github:', config.github ? `token: ${config.github.token?.substring(0, 10)}...` : 'NOT SET');
     const ollama = new OllamaProvider({
       host: config.ollama?.host,
       model: config.ollama?.model,
@@ -651,8 +652,11 @@ ipcMain.handle('get-config', () => {
 
 // Save config
 ipcMain.handle('save-config', (_event, newConfig: Partial<AppConfig>) => {
+  console.log('[DEBUG] save-config received:', JSON.stringify(newConfig, null, 2));
   try {
     updateConfig(newConfig);
+    const saved = getConfig();
+    console.log('[DEBUG] save-config result - github token:', saved.github?.token ? `${saved.github.token.substring(0, 10)}...` : 'NOT SET');
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
